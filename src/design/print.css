@@ -1,0 +1,205 @@
+/* Dentiva Pro — print engine styles. Used by the print preview sandbox AND the
+   real print output (window.print with @page sizes). Bengali-safe fonts. */
+
+.dp-doc {
+  font-family: "Inter", "Segoe UI", "Noto Sans Bengali", "Nirmala UI", "SolaimanLipi", sans-serif;
+  color: #111;
+  background: #fff;
+  line-height: 1.45;
+}
+
+.dp-doc * {
+  box-sizing: border-box;
+}
+
+.dp-rx-head {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  border-bottom: 2.5px solid #0e7490;
+  padding-bottom: 10px;
+  margin-bottom: 10px;
+}
+
+.dp-rx-logo {
+  max-height: 64px;
+  max-width: 130px;
+  object-fit: contain;
+}
+
+.dp-rx-clinic {
+  flex: 1;
+}
+
+.dp-rx-clinic h1 {
+  margin: 0;
+  font-size: 21px;
+  color: #0f2240;
+  letter-spacing: 0.2px;
+}
+
+.dp-rx-clinic .addr {
+  font-size: 11.5px;
+  color: #333;
+}
+
+.dp-rx-doc {
+  text-align: right;
+  font-size: 11.5px;
+}
+
+.dp-rx-doc .dname {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f2240;
+}
+
+.dp-rx-patient {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 22px;
+  font-size: 12px;
+  border: 1px solid #999;
+  border-radius: 6px;
+  padding: 7px 12px;
+  margin-bottom: 10px;
+}
+
+.dp-rx-body {
+  display: flex;
+  gap: 14px;
+}
+
+.dp-rx-left {
+  flex: 0 0 38%;
+  font-size: 11.5px;
+}
+
+.dp-rx-right {
+  flex: 1;
+  min-width: 0;
+}
+
+.dp-rx-sec {
+  margin-bottom: 10px;
+}
+
+.dp-rx-sec h3 {
+  margin: 0 0 3px;
+  font-size: 12.5px;
+  color: #0f2240;
+  border-bottom: 1px solid #bbb;
+  padding-bottom: 2px;
+}
+
+.dp-rx-sec .body {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.dp-med-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.dp-med-table th {
+  background: #eef4f8;
+  border: 1px solid #888;
+  padding: 4px 5px;
+  text-align: left;
+  font-size: 10.5px;
+}
+
+.dp-med-table td {
+  border: 1px solid #888;
+  padding: 4px 5px;
+  vertical-align: top;
+  word-break: break-word;
+}
+
+.dp-rx-foot {
+  margin-top: 12px;
+  border-top: 1.5px solid #0e7490;
+  padding-top: 8px;
+  font-size: 11px;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.dp-sign {
+  text-align: center;
+  min-width: 190px;
+}
+
+.dp-sign .space {
+  height: 64px;
+}
+
+.dp-sign .line {
+  border-top: 1px solid #333;
+  padding-top: 3px;
+  font-size: 11.5px;
+}
+
+.dp-inv-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  margin: 10px 0;
+}
+
+.dp-inv-table th {
+  background: #eef4f8;
+  border: 1px solid #888;
+  padding: 5px 7px;
+  text-align: left;
+}
+
+.dp-inv-table td {
+  border: 1px solid #888;
+  padding: 5px 7px;
+}
+
+.dp-inv-totals {
+  margin-left: auto;
+  width: 260px;
+  font-size: 12px;
+}
+
+.dp-inv-totals .row {
+  display: flex;
+  justify-content: space-between;
+  padding: 2px 0;
+}
+
+.dp-inv-totals .grand {
+  font-weight: 800;
+  font-size: 13.5px;
+  border-top: 1.5px solid #333;
+  margin-top: 4px;
+  padding-top: 4px;
+}
+
+/* Paper simulation in preview */
+.dp-paper-A4 { width: 210mm; min-height: 296mm; padding: 12mm; }
+.dp-paper-A5 { width: 148mm; min-height: 209mm; padding: 10mm; }
+.dp-paper-THERMAL_80 { width: 80mm; min-height: 120mm; padding: 4mm; font-size: 90%; }
+.dp-paper-THERMAL_58 { width: 58mm; min-height: 120mm; padding: 3mm; font-size: 82%; }
+
+@media print {
+  body.printing > *:not(#print-root) {
+    display: none !important;
+  }
+  #print-root {
+    display: block !important;
+  }
+  .dp-doc {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  @page {
+    margin: 10mm;
+  }
+}

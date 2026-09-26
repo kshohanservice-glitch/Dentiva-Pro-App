@@ -1,0 +1,17 @@
+# Dentiva Pro
+node_modules/
+dist-web/
+src-tauri/target/
+src-tauri/gen/
+*.log
+.DS_Store
+Thumbs.db
+*.local
+coverage/
+.vite/
+*.dentivabak
+backups/
+test-*.db*
+*.tsbuildinfo
+dist/*.exe
+dist/*.nsis

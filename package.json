@@ -1,0 +1,39 @@
+{
+  "name": "dentiva-pro",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Dentiva Pro — offline-first dental clinic management desktop application (Tauri 2 + React + SQLite)",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -b --pretty false",
+    "lint": "oxlint",
+    "test": "vitest run",
+    "test:unit": "vitest run tests/unit",
+    "test:integration": "vitest run tests/integration",
+    "audit:licenses": "node scripts/license-audit.mjs",
+    "audit:secrets": "node scripts/secret-scan.mjs",
+    "audit:todo": "node scripts/no-todo.mjs",
+    "postinstall": "node scripts/copy-wasm.mjs",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.4.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "sql.js": "^1.13.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "@vitejs/plugin-react": "^6.1.1",
+    "@vitest/coverage-v8": "^4.0.18",
+    "oxlint": "^1.81.0",
+    "typescript": "~6.0.2",
+    "vite": "^8.3.0",
+    "vitest": "^4.0.18"
+  }
+}

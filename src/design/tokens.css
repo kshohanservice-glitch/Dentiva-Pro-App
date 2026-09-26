@@ -1,0 +1,109 @@
+/* Dentiva Pro — design tokens (single source of truth for color/type/space). */
+
+:root {
+  --dp-navy-950: #0a1628;
+  --dp-navy-900: #0f2240;
+  --dp-navy-800: #16305a;
+  --dp-navy-700: #1e4076;
+  --dp-navy-600: #26519a;
+  --dp-navy-500: #2f63bd;
+
+  --dp-teal-700: #0e7490;
+  --dp-teal-600: #0891b2;
+  --dp-teal-500: #06b6d4;
+  --dp-teal-100: #cffafe;
+  --dp-teal-50: #ecfeff;
+
+  --dp-bg: #eef2f7;
+  --dp-surface: #ffffff;
+  --dp-surface-2: #f6f8fb;
+  --dp-surface-3: #e9eef5;
+  --dp-border: #d9e1ec;
+  --dp-border-strong: #b9c6d8;
+
+  --dp-ink: #12233b;
+  --dp-ink-2: #3d4f68;
+  --dp-ink-3: #64748f;
+  --dp-ink-4: #8b9bb4;
+
+  --dp-accent: #0e7490;
+  --dp-accent-strong: #0b5e75;
+  --dp-accent-soft: #e0f5fa;
+
+  --dp-success: #15803d;
+  --dp-success-bg: #e7f6ec;
+  --dp-warning: #b45309;
+  --dp-warning-bg: #fdf3e3;
+  --dp-danger: #b91c1c;
+  --dp-danger-bg: #fdeaea;
+  --dp-info: #1d4ed8;
+  --dp-info-bg: #e8effe;
+
+  --dp-sidebar-bg: linear-gradient(180deg, #0c1c36 0%, #10254a 55%, #0e2f52 100%);
+  --dp-sidebar-ink: #dbe7f5;
+  --dp-sidebar-dim: #93a9c7;
+  --dp-sidebar-active: #ffffff;
+  --dp-header-bg: #ffffff;
+
+  --dp-radius-sm: 6px;
+  --dp-radius: 10px;
+  --dp-radius-lg: 14px;
+
+  --dp-shadow-sm: 0 1px 2px rgba(10, 22, 40, 0.08);
+  --dp-shadow: 0 2px 10px rgba(10, 22, 40, 0.1);
+  --dp-shadow-lg: 0 12px 40px rgba(10, 22, 40, 0.18);
+
+  --dp-font: "Inter", "Segoe UI", "Noto Sans Bengali", "Nirmala UI", "SolaimanLipi", system-ui, sans-serif;
+  --dp-font-bn: "Noto Sans Bengali", "Nirmala UI", "SolaimanLipi", "Inter", sans-serif;
+
+  --dp-sidebar-w: 264px;
+  --dp-sidebar-w-collapsed: 78px;
+  --dp-header-h: 60px;
+
+  --dp-space-1: 4px;
+  --dp-space-2: 8px;
+  --dp-space-3: 12px;
+  --dp-space-4: 16px;
+  --dp-space-5: 20px;
+  --dp-space-6: 24px;
+  --dp-space-8: 32px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--dp-font);
+  background: var(--dp-bg);
+  color: var(--dp-ink);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--dp-accent-soft);
+}
+
+:focus-visible {
+  outline: 2px solid var(--dp-teal-600);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

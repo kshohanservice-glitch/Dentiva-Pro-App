@@ -1,0 +1,47 @@
+# Dentiva Pro — Windows installer release.
+# Trigger: version tag push (v1.0.0, ...) or manual dispatch.
+# Produces: NSIS .exe installer (+ portable .exe) attached to the GitHub Release
+# and uploaded as workflow artifacts. A local fallback copy belongs in /dist
+# (see dist/README.md). Set the DENTIVA_PRODUCT_CODE repository secret to run
+# the genuine-code activation acceptance test in CI.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run audit:secrets
+      - run: npm run audit:todo
+      - name: Tests (incl. genuine-code activation acceptance when the secret is set)
+        env:
+          DENTIVA_PRODUCT_CODE: ${{ secrets.DENTIVA_PRODUCT_CODE }}
+        run: npm test
+      - name: Rust tests
+        working-directory: src-tauri
+        run: cargo test --release
+      - name: Build Tauri app (NSIS installer + portable exe)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Upload installer artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dentiva-pro-windows-installer
+          path: |
+            src-tauri/target/release/bundle/nsis/*.exe
