@@ -83,12 +83,25 @@ jobs:
           path: rust-*.log
           if-no-files-found: ignore
       - name: Report Rust log tails as annotations
-        if: failure()
+        if: always()
         run: |
-          for f in rust-clippy.log rust-test.log rust-check.log; do
-            if [ -f "$GITHUB_WORKSPACE/$f" ]; then
-              grep -aE "^(error|warning)" "$GITHUB_WORKSPACE/$f" | head -30 | sed 's/%/%25/g' | while IFS= read -r line; do
-                echo "::error::$f: $line"
-              done
-            fi
-          done
+          python3 - <<'PYEOF'
+          import os
+          ws = os.environ.get('GITHUB_WORKSPACE', '.')
+          print(f"::notice::workspace={ws}")
+          for name in ('rust-clippy.log', 'rust-test.log', 'rust-check.log'):
+              p = os.path.join(ws, name)
+              if not os.path.isfile(p):
+                  print(f"::notice::{name}: MISSING")
+                  continue
+              try:
+                  lines = open(p, encoding='utf-8', errors='replace').read().splitlines()
+              except OSError as e:
+                  print(f"::error::{name}: cannot read: {e}")
+                  continue
+              hits = [l for l in lines if 'error' in l.lower() or l.startswith('warning')]
+              if not hits:
+                  hits = [f'({len(lines)} lines, no error/warning lines; tail:)'] + lines[-6:]
+              for l in hits[:8]:
+                  print('::error::' + name + ': ' + l.replace('%', '%25')[:400])
+          PYEOF
