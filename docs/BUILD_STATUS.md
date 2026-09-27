@@ -19,7 +19,7 @@
 - Rust sources: all 14 files parse-clean (tree-sitter gate)
 - Activation verifier independently recomputed: matches the genuine product code
 
-## Test / build log (2026-09-26)
+## Test / build log (2026-09-26 → 2026-09-27)
 
 - `npm run typecheck` — CLEAN
 - `npm run lint` — 0 errors (1346 style warnings)
@@ -27,9 +27,13 @@
 - `DENTIVA_PRODUCT_CODE=<real> npm test` path — acceptance test PASSED
 - `npm run audit:licenses` / `audit:secrets` / `audit:todo` — PASS
 - `npm run build` — `dist-web/` produced, served 200 on preview
-- Rust `cargo fmt/clippy/test/check` — runs in CI (Linux) + release workflow (Windows)
+- **CI (ubuntu-24.04) ALL GREEN** — frontend gates + Rust `cargo fmt`,
+  `cargo clippy -- -D warnings`, `cargo test`, `cargo check` all pass.
+  Fixed along the way: date-independent integration tests, redundant-closure
+  clippy hardening, `include_str!` schema path, rustfmt conformance (via CI bot).
+- Release workflow (windows-latest NSIS build) triggered by tag `v1.0.0`.
 
 ## Release readiness
 
-READY — pending the manual installed-app pass on Windows, recorded in
-`docs/RELEASE_CHECKLIST.md` at ship time.
+READY — installer built by the Release workflow; the manual installed-app pass
+on Windows is recorded in `docs/RELEASE_CHECKLIST.md` at ship time.
