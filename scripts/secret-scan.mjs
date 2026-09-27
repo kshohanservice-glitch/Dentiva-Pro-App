@@ -4,9 +4,12 @@
 // 16-digit numeric literal (the code format) anywhere in source/tests/docs, plus
 // common secret patterns. Run: npm run audit:secrets
 import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { join, extname } from 'node:path';
+import { dirname, join, extname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const ROOT = new URL('..', import.meta.url).pathname;
+// fileURLToPath (not .pathname): the naive form breaks on Windows
+// ('D:\\D:\\a\\...' mangled drive path) and would fail the release gate.
+const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'dist-web', 'target', '.vite', 'coverage']);
 const SCAN_EXTS = new Set(['.ts', '.tsx', '.js', '.mjs', '.cjs', '.rs', '.toml', '.json', '.md', '.yml', '.yaml', '.html', '.css', '.sql']);
 
@@ -33,8 +36,9 @@ function walk(dir) {
       const text = readFileSync(p, 'utf8');
       const lines = text.split('\n');
       lines.forEach((line, i) => {
-        // Allow this scanner to describe the patterns it hunts.
-        if (p.endsWith('scripts/secret-scan.mjs')) return;
+        // Allow this scanner to describe the patterns it hunts
+        // (separator-normalised so the exemption also holds on Windows).
+        if (p.replace(/\\/g, '/').endsWith('scripts/secret-scan.mjs')) return;
         for (const { re, label } of PATTERNS) {
           if (re.test(line)) findings.push(`${p}:${i + 1}: ${label}: ${line.trim().slice(0, 120)}`);
         }

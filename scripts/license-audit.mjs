@@ -3,9 +3,12 @@
 // or has no detectable license. Run: npm run audit:licenses
 import { readFileSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
 
-const ROOT = join(dirname(new URL(import.meta.url).pathname), '..');
+// fileURLToPath (not .pathname): the naive form breaks on Windows
+// ('D:\\D:\\a\\...' mangled drive path) and would fail the release gate.
+const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
 const prodDeps = Object.keys(pkg.dependencies ?? {});
 

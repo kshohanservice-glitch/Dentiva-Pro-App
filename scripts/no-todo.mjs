@@ -1,9 +1,12 @@
 // Dentiva Pro — no-TODO gate: production source must not contain placeholders.
 // Run: npm run audit:todo
 import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { join, extname } from 'node:path';
+import { dirname, join, extname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const ROOT = new URL('..', import.meta.url).pathname;
+// fileURLToPath (not .pathname): the naive form breaks on Windows
+// ('D:\\D:\\a\\...' mangled drive path) and would fail the release gate.
+const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'dist-web', 'target', '.vite', 'coverage']);
 const SCAN_EXTS = new Set(['.ts', '.tsx', '.rs']);
 
