@@ -57,7 +57,17 @@ function wasmFile(): string {
   const isNode = typeof process !== 'undefined' && !!(process as unknown as { versions?: { node?: string } }).versions?.node;
   if (isNode) {
     const url = new URL('../../public/sql-wasm.wasm', import.meta.url);
-    return url.pathname;
+    // fileURLToPath equivalent (no node: imports — this module also ships to
+    // browsers). A raw .pathname yields '/D:/...' on Windows, which sql.js
+    // cannot open; strip the leading slash so it becomes a valid 'D:/...' path.
+    let p = url.pathname;
+    if (/^\/[A-Za-z]:\//.test(p)) p = p.slice(1);
+    try {
+      p = decodeURIComponent(p);
+    } catch {
+      /* keep raw on malformed sequences */
+    }
+    return p;
   }
   return 'sql-wasm.wasm';
 }
