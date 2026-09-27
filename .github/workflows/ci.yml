@@ -30,15 +30,47 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
       - name: Install Tauri system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
             libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
-      - name: Rust checks
+      - name: cargo fmt --check
         working-directory: src-tauri
         run: |
-          cargo fmt --check
-          cargo clippy --all-targets -- -D warnings
-          cargo test
-          cargo check
+          set -o pipefail
+          cargo fmt --check 2>&1 | tee "$GITHUB_WORKSPACE/rust-fmt.log"
+      - name: cargo clippy
+        working-directory: src-tauri
+        run: |
+          set -o pipefail
+          cargo clippy --all-targets -- -D warnings 2>&1 | tee "$GITHUB_WORKSPACE/rust-clippy.log"
+      - name: cargo test
+        working-directory: src-tauri
+        run: |
+          set -o pipefail
+          cargo test 2>&1 | tee "$GITHUB_WORKSPACE/rust-test.log"
+      - name: cargo check
+        working-directory: src-tauri
+        run: |
+          set -o pipefail
+          cargo check 2>&1 | tee "$GITHUB_WORKSPACE/rust-check.log"
+      - name: Upload Rust logs
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: rust-logs
+          path: rust-*.log
+          if-no-files-found: ignore
+      - name: Report Rust log tails as annotations
+        if: failure()
+        run: |
+          for f in rust-fmt.log rust-clippy.log rust-test.log rust-check.log; do
+            if [ -f "$GITHUB_WORKSPACE/$f" ]; then
+              grep -aE "^(error|warning)" "$GITHUB_WORKSPACE/$f" | head -30 | sed 's/%/%25/g' | while IFS= read -r line; do
+                echo "::error::$f: $line"
+              done
+            fi
+          done

@@ -24,7 +24,7 @@ pub fn staff_list(state: State<'_, AppState>, payload: Value) -> Result<Value, S
         state.need("staff.view")?;
         let can_manage = state.optional_session().map(|s| s.permissions.iter().any(|p| p == "*" || p == "staff.manage")).unwrap_or(false);
         let conn = state.conn.lock().unwrap();
-        let q = payload.get("search").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+        let q = payload.get("search").and_then(serde_json::Value::as_str).unwrap_or("").trim().to_string();
         let rows = if q.is_empty() {
             util::query_all(&conn, "SELECT * FROM staff ORDER BY name", params!())?
         } else {
@@ -55,9 +55,9 @@ pub fn staff_save(state: State<'_, AppState>, payload: Value) -> Result<Value, S
         let salary = util::req_money(payload.get("salaryPaisa").unwrap_or(&Value::Null), "salary")?;
         let conn = state.conn.lock().unwrap();
         let g = |k: &str, m: usize| util::opt_text(payload.get(k).unwrap_or(&Value::Null), m);
-        let dob: Option<String> = payload.get("dob").and_then(|v| v.as_str()).filter(|s| !s.is_empty()).map(|s| s.to_string());
-        let joining: Option<String> = payload.get("joiningDate").and_then(|v| v.as_str()).filter(|s| !s.is_empty()).map(|s| s.to_string());
-        let active = if payload.get("active").and_then(|v| v.as_bool()).unwrap_or(true) { 1 } else { 0 };
+        let dob: Option<String> = payload.get("dob").and_then(serde_json::Value::as_str).filter(|s| !s.is_empty()).map(ToString::to_string);
+        let joining: Option<String> = payload.get("joiningDate").and_then(serde_json::Value::as_str).filter(|s| !s.is_empty()).map(ToString::to_string);
+        let active = if payload.get("active").and_then(serde_json::Value::as_bool).unwrap_or(true) { 1 } else { 0 };
         if let Some(id) = util::opt_id(payload.get("id").unwrap_or(&Value::Null)) {
             conn.execute("UPDATE staff SET name = ?1, dob = ?2, gender = ?3, address = ?4, phone = ?5, emergency_contact = ?6, emergency_phone = ?7, blood_group = ?8, nid_no = ?9, role_title = ?10, department = ?11, joining_date = ?12, salary_paisa = ?13, notes = ?14, active = ?15, updated_at = ?16 WHERE id = ?17",
                 params![name, dob, g("gender", 16), g("address", 500), g("phone", 48), g("emergency_contact", 120), g("emergency_phone", 48),
@@ -125,10 +125,10 @@ pub fn users_save(state: State<'_, AppState>, payload: Value) -> Result<Value, S
             if dup > 0 {
                 return Err(CmdError::new("DUPLICATE", "Username already exists."));
             }
-            let active = if payload.get("active").and_then(|v| v.as_bool()).unwrap_or(true) { 1 } else { 0 };
+            let active = if payload.get("active").and_then(serde_json::Value::as_bool).unwrap_or(true) { 1 } else { 0 };
             conn.execute("UPDATE users SET full_name = ?1, username = ?2, role_id = ?3, active = ?4, updated_at = ?5 WHERE id = ?6",
                 params![full_name, username, role_id, active, util::now_local(), id])?;
-            if let Some(pw) = payload.get("password").and_then(|v| v.as_str()) {
+            if let Some(pw) = payload.get("password").and_then(serde_json::Value::as_str) {
                 if !pw.is_empty() {
                     if pw.len() < 8 {
                         return Err(CmdError::new("VALIDATION", "Password must be at least 8 characters."));
@@ -144,7 +144,7 @@ pub fn users_save(state: State<'_, AppState>, payload: Value) -> Result<Value, S
         if dup > 0 {
             return Err(CmdError::new("DUPLICATE", "Username already exists."));
         }
-        let pw = payload.get("password").and_then(|v| v.as_str()).unwrap_or("");
+        let pw = payload.get("password").and_then(serde_json::Value::as_str).unwrap_or("");
         if pw.len() < 8 {
             return Err(CmdError::new("VALIDATION", "Password must be at least 8 characters."));
         }
@@ -220,7 +220,7 @@ pub fn roles_save(state: State<'_, AppState>, payload: Value) -> Result<Value, S
         state.gate("roles_save")?;
         state.need("roles.manage")?;
         let name = util::req_text(payload.get("name").unwrap_or(&Value::Null), "Role name", 64)?;
-        let perms: Vec<String> = payload.get("permissions").and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|p| p.as_str().map(|s| s.to_string())).collect()).unwrap_or_default();
+        let perms: Vec<String> = payload.get("permissions").and_then(serde_json::Value::as_array).map(|a| a.iter().filter_map(|p| p.as_str().map(ToString::to_string)).collect()).unwrap_or_default();
         let conn = state.conn.lock().unwrap();
         let desc = util::opt_text(payload.get("description").unwrap_or(&Value::Null), 300);
         if let Some(id) = util::opt_id(payload.get("id").unwrap_or(&Value::Null)) {
@@ -306,7 +306,7 @@ pub fn clinic_update(state: State<'_, AppState>, payload: Value) -> Result<Value
         let conn = state.conn.lock().unwrap();
         let g = |k: &str, m: usize| util::opt_text(payload.get(k).unwrap_or(&Value::Null), m);
         let logo_path: Option<String> = if payload.get("logoPath").is_some() {
-            payload.get("logoPath").and_then(|v| v.as_str()).filter(|s| !s.is_empty()).map(|s| s.to_string())
+            payload.get("logoPath").and_then(serde_json::Value::as_str).filter(|s| !s.is_empty()).map(ToString::to_string)
         } else {
             conn.query_row("SELECT logo_path FROM clinic WHERE id = 1", (), |r| r.get(0)).ok()
         };
@@ -330,7 +330,7 @@ pub fn dentists_list(state: State<'_, AppState>) -> Result<Value, String> {
         for mut d in rows {
             let did = d["id"].as_i64().unwrap_or(0);
             let des: Vec<String> = util::query_all(&conn, "SELECT designation FROM dentist_designations WHERE dentist_id = ?1 ORDER BY sort_order", &[&did])?
-                .iter().filter_map(|x| x["designation"].as_str().map(|s| s.to_string())).collect();
+                .iter().filter_map(|x| x["designation"].as_str().map(ToString::to_string)).collect();
             d["designations"] = json!(des);
             out.push(d);
         }
@@ -345,12 +345,12 @@ pub fn dentists_save(state: State<'_, AppState>, payload: Value) -> Result<Value
         state.gate("dentists_save")?;
         state.need("settings.manage")?;
         let name = util::req_text(payload.get("name").unwrap_or(&Value::Null), "Dentist name", 160)?;
-        let designations: Vec<String> = payload.get("designations").and_then(|v| v.as_array())
-            .map(|a| a.iter().filter_map(|d| d.as_str()).map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).take(10).collect())
+        let designations: Vec<String> = payload.get("designations").and_then(serde_json::Value::as_array)
+            .map(|a| a.iter().filter_map(serde_json::Value::as_str).map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).take(10).collect())
             .unwrap_or_default();
         let conn = state.conn.lock().unwrap();
         let g = |k: &str, m: usize| util::opt_text(payload.get(k).unwrap_or(&Value::Null), m);
-        let active = if payload.get("active").and_then(|v| v.as_bool()).unwrap_or(true) { 1 } else { 0 };
+        let active = if payload.get("active").and_then(serde_json::Value::as_bool).unwrap_or(true) { 1 } else { 0 };
         if let Some(id) = util::opt_id(payload.get("id").unwrap_or(&Value::Null)) {
             conn.execute("UPDATE dentists SET name = ?1, phone = ?2, email = ?3, registration_no = ?4, active = ?5, updated_at = ?6 WHERE id = ?7",
                 params![name, g("phone", 64), g("email", 120), g("registrationNo", 120), active, util::now_local(), id])?;
@@ -418,7 +418,7 @@ pub fn printer_profiles_save(state: State<'_, AppState>, payload: Value) -> Resu
         let name = util::req_text(payload.get("name").unwrap_or(&Value::Null), "Profile name", 120)?;
         let doc_type = { let d = util::opt_text(payload.get("documentType").unwrap_or(&Value::Null), 32); if d.is_empty() { "prescription".to_string() } else { d } };
         let conn = state.conn.lock().unwrap();
-        if payload.get("isDefault").and_then(|v| v.as_bool()).unwrap_or(false) {
+        if payload.get("isDefault").and_then(serde_json::Value::as_bool).unwrap_or(false) {
             conn.execute("UPDATE printer_profiles SET is_default = 0 WHERE document_type = ?1", [&doc_type])?;
         }
         let paper = { let p = util::opt_text(payload.get("paperSize").unwrap_or(&Value::Null), 24); if p.is_empty() { "A4".to_string() } else { p } };
@@ -427,8 +427,8 @@ pub fn printer_profiles_save(state: State<'_, AppState>, payload: Value) -> Resu
         let header = { let h = util::opt_text(payload.get("headerMode").unwrap_or(&Value::Null), 24); if h.is_empty() { "full".to_string() } else { h } };
         let footer = { let f = util::opt_text(payload.get("footerMode").unwrap_or(&Value::Null), 24); if f.is_empty() { "full".to_string() } else { f } };
         let copies = util::req_int(payload.get("copies").unwrap_or(&json!(1)), "copies", 1, 10)?;
-        let scale = payload.get("fontScale").and_then(|v| v.as_f64()).unwrap_or(1.0);
-        let is_default = if payload.get("isDefault").and_then(|v| v.as_bool()).unwrap_or(false) { 1 } else { 0 };
+        let scale = payload.get("fontScale").and_then(serde_json::Value::as_f64).unwrap_or(1.0);
+        let is_default = if payload.get("isDefault").and_then(serde_json::Value::as_bool).unwrap_or(false) { 1 } else { 0 };
         let printer_name = util::opt_text(payload.get("printerName").unwrap_or(&Value::Null), 160);
         if let Some(id) = util::opt_id(payload.get("id").unwrap_or(&Value::Null)) {
             conn.execute("UPDATE printer_profiles SET name = ?1, document_type = ?2, printer_name = ?3, paper_size = ?4, margins_mm = ?5, orientation = ?6, font_scale = ?7, header_mode = ?8, footer_mode = ?9, copies = ?10, is_default = ?11, updated_at = ?12 WHERE id = ?13",

@@ -43,7 +43,7 @@ fn timing_safe_equal(a: &str, b: &str) -> bool {
 /// Returns true only when `code` derives to the embedded verifier.
 pub fn verify_activation_code(code: &str) -> bool {
     let candidate = code.trim();
-    if candidate.len() < 8 || candidate.len() > 32 || !candidate.bytes().all(|b| b.is_ascii_digit()) {
+    if candidate.len() < 8 || candidate.len() > 32 || !candidate.bytes().all(u8::is_ascii_digit) {
         return false;
     }
     let digest = sha256_hex(&format!("{DOMAIN}{candidate}"));
@@ -52,7 +52,7 @@ pub fn verify_activation_code(code: &str) -> bool {
 
 /// Device-bound activation receipt stored after successful activation.
 pub fn activation_receipt(install_id: &str) -> String {
-    sha256_hex(&format!("{}::{}", expected_hex(), install_id))
+    sha256_hex(&format!("{}::{install_id}", expected_hex()))
 }
 
 #[cfg(test)]

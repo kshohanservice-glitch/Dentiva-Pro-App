@@ -59,16 +59,16 @@ pub fn patients_list(state: State<'_, AppState>, payload: Value) -> Result<Value
         state.gate("patients_list")?;
         state.need("patients.view")?;
         let conn = state.conn.lock().unwrap();
-        let range = payload.get("range").and_then(|v| v.as_str()).unwrap_or("today");
-        let search = payload.get("search").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
-        let sort = payload.get("sort").and_then(|v| v.as_str()).unwrap_or("newest");
-        let dentist_id = payload.get("dentistId").and_then(|v| v.as_i64()).filter(|n| *n > 0);
-        let status = payload.get("status").and_then(|v| v.as_str()).unwrap_or("");
-        let page = payload.get("page").and_then(|v| v.as_i64()).unwrap_or(1).max(1);
-        let page_size = payload.get("pageSize").and_then(|v| v.as_i64()).unwrap_or(25).clamp(5, 200);
+        let range = payload.get("range").and_then(serde_json::Value::as_str).unwrap_or("today");
+        let search = payload.get("search").and_then(serde_json::Value::as_str).unwrap_or("").trim().to_string();
+        let sort = payload.get("sort").and_then(serde_json::Value::as_str).unwrap_or("newest");
+        let dentist_id = payload.get("dentistId").and_then(serde_json::Value::as_i64).filter(|n| *n > 0);
+        let status = payload.get("status").and_then(serde_json::Value::as_str).unwrap_or("");
+        let page = payload.get("page").and_then(serde_json::Value::as_i64).unwrap_or(1).max(1);
+        let page_size = payload.get("pageSize").and_then(serde_json::Value::as_i64).unwrap_or(25).clamp(5, 200);
         let today = util::today();
         let (from, to): (Option<String>, Option<String>) = if range == "custom" {
-            (Some(payload.get("from").and_then(|v| v.as_str()).unwrap_or(&today).to_string()), Some(payload.get("to").and_then(|v| v.as_str()).unwrap_or(&today).to_string()))
+            (Some(payload.get("from").and_then(serde_json::Value::as_str).unwrap_or(&today).to_string()), Some(payload.get("to").and_then(serde_json::Value::as_str).unwrap_or(&today).to_string()))
         } else if range == "all" {
             (None, None)
         } else {
@@ -132,7 +132,7 @@ pub fn patients_get(state: State<'_, AppState>, payload: Value) -> Result<Value,
         let p = util::query_one(&conn, "SELECT p.*, d.name AS dentist_name FROM patients p LEFT JOIN dentists d ON d.id = p.dentist_id WHERE p.id = ?1", &[&id])?
             .ok_or_else(|| CmdError::new("NOT_FOUND", "Patient not found."))?;
         let tags: Vec<String> = util::query_all(&conn, "SELECT tag FROM patient_tags WHERE patient_id = ?1", &[&id])?
-            .iter().filter_map(|t| t["tag"].as_str().map(|s| s.to_string())).collect();
+            .iter().filter_map(|t| t["tag"].as_str().map(ToString::to_string)).collect();
         let mut out = p.clone();
         out["tags"] = json!(tags);
         if !clinical_view(&state) {
@@ -176,7 +176,7 @@ pub fn patients_create(state: State<'_, AppState>, payload: Value) -> Result<Val
         let me = state.need("patients.create")?;
         let name = util::req_text(payload.get("name").unwrap_or(&Value::Null), "Patient name", 160)?;
         let phone = util::opt_text(payload.get("phone").unwrap_or(&Value::Null), 32);
-        let dob = payload.get("dob").and_then(|v| v.as_str()).unwrap_or("");
+        let dob = payload.get("dob").and_then(serde_json::Value::as_str).unwrap_or("");
         if !dob.is_empty() {
             let b = dob.as_bytes();
             if b.len() != 10 || b[4] != b'-' || b[7] != b'-' {
@@ -186,14 +186,14 @@ pub fn patients_create(state: State<'_, AppState>, payload: Value) -> Result<Val
         let conn = state.conn.lock().unwrap();
         let warnings = duplicate_warnings(&conn, &name, &phone, dob);
         let g = |k: &str, m: usize| util::opt_text(payload.get(k).unwrap_or(&Value::Null), m);
-        let age = payload.get("age_years").and_then(|v| v.as_i64());
+        let age = payload.get("age_years").and_then(serde_json::Value::as_i64);
         let dentist_id = util::opt_id(payload.get("dentist_id").unwrap_or(&Value::Null));
-        let tags: Vec<String> = payload.get("tags").and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|t| t.as_str().map(|s| s.to_string())).collect()).unwrap_or_default();
+        let tags: Vec<String> = payload.get("tags").and_then(serde_json::Value::as_array).map(|a| a.iter().filter_map(|t| t.as_str().map(ToString::to_string)).collect()).unwrap_or_default();
         let status = { let s = g("status", 24); if s.is_empty() { "active".to_string() } else { s } };
         let mut new_id = 0i64;
         let mut code = String::new();
         txn(&conn, || {
-            code = if payload.get("code").and_then(|v| v.as_str()).map(|s| !s.trim().is_empty()).unwrap_or(false) {
+            code = if payload.get("code").and_then(serde_json::Value::as_str).map(|s| !s.trim().is_empty()).unwrap_or(false) {
                 util::req_text(payload.get("code").unwrap_or(&Value::Null), "Patient code", 32)?
             } else {
                 next_code(&conn, "patient_code_prefix", "patient_code_next", "patient_code_pad")
@@ -233,7 +233,7 @@ pub fn patients_update(state: State<'_, AppState>, payload: Value) -> Result<Val
         let conn = state.conn.lock().unwrap();
         let before = util::query_one(&conn, "SELECT * FROM patients WHERE id = ?1", &[&id])?
             .ok_or_else(|| CmdError::new("NOT_FOUND", "Patient not found."))?;
-        if let Some(code) = payload.get("code").and_then(|v| v.as_str()) {
+        if let Some(code) = payload.get("code").and_then(serde_json::Value::as_str) {
             if code != before["code"].as_str().unwrap_or("") {
                 let dup: i64 = conn.query_row("SELECT COUNT(*) FROM patients WHERE code = ?1 AND id != ?2", params![code, id], |r| r.get(0))?;
                 if dup > 0 {
@@ -243,14 +243,14 @@ pub fn patients_update(state: State<'_, AppState>, payload: Value) -> Result<Val
         }
         let fb = |k: &str| before[k].as_str().unwrap_or("").to_string();
         let g = |k: &str, m: usize| -> String {
-            payload.get(k).and_then(|v| v.as_str()).unwrap_or(&fb(k)).trim().chars().take(m).collect()
+            payload.get(k).and_then(serde_json::Value::as_str).unwrap_or(&fb(k)).trim().chars().take(m).collect()
         };
         let name = util::req_text(&json!(g("name", 160)), "Patient name", 160)?;
-        let code = payload.get("code").and_then(|v| v.as_str()).unwrap_or(before["code"].as_str().unwrap_or("")).to_string();
-        let dob: Option<String> = if payload.get("dob").is_some() { payload.get("dob").and_then(|v| v.as_str()).filter(|s| !s.is_empty()).map(|s| s.to_string()) } else { before["dob"].as_str().map(|s| s.to_string()) };
-        let age: Option<i64> = if payload.get("age_years").is_some() { payload.get("age_years").and_then(|v| v.as_i64()) } else { before["age_years"].as_i64() };
+        let code = payload.get("code").and_then(serde_json::Value::as_str).unwrap_or(before["code"].as_str().unwrap_or("")).to_string();
+        let dob: Option<String> = if payload.get("dob").is_some() { payload.get("dob").and_then(serde_json::Value::as_str).filter(|s| !s.is_empty()).map(ToString::to_string) } else { before["dob"].as_str().map(ToString::to_string) };
+        let age: Option<i64> = if payload.get("age_years").is_some() { payload.get("age_years").and_then(serde_json::Value::as_i64) } else { before["age_years"].as_i64() };
         let dentist_id: Option<i64> = if payload.get("dentist_id").is_some() { util::opt_id(payload.get("dentist_id").unwrap_or(&Value::Null)) } else { before["dentist_id"].as_i64() };
-        let tags: Option<Vec<String>> = payload.get("tags").and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|t| t.as_str().map(|s| s.to_string())).collect());
+        let tags: Option<Vec<String>> = payload.get("tags").and_then(serde_json::Value::as_array).map(|a| a.iter().filter_map(|t| t.as_str().map(ToString::to_string)).collect());
         txn(&conn, || {
             conn.execute(
                 "UPDATE patients SET code = ?1, name = ?2, dob = ?3, age_years = ?4, gender = ?5, blood_group = ?6, address = ?7, phone = ?8, emergency_phone = ?9, emergency_contact = ?10, complaint = ?11, prev_problems = ?12, medical_notes = ?13, dental_notes = ?14, allergies = ?15, notes = ?16, dentist_id = ?17, referral_source = ?18, status = ?19, updated_at = ?20 WHERE id = ?21",
@@ -282,7 +282,7 @@ pub fn patients_delete(state: State<'_, AppState>, payload: Value) -> Result<Val
         state.gate("patients_delete")?;
         state.need("patients.delete")?;
         let id = util::req_int(payload.get("id").unwrap_or(&Value::Null), "id", 1, i64::MAX)?;
-        let mode = payload.get("mode").and_then(|v| v.as_str()).unwrap_or("archive");
+        let mode = payload.get("mode").and_then(serde_json::Value::as_str).unwrap_or("archive");
         let conn = state.conn.lock().unwrap();
         let p = util::query_one(&conn, "SELECT * FROM patients WHERE id = ?1", &[&id])?
             .ok_or_else(|| CmdError::new("NOT_FOUND", "Patient not found."))?;
@@ -351,7 +351,7 @@ pub fn patient_timeline(state: State<'_, AppState>, payload: Value) -> Result<Va
         state.gate("patient_timeline")?;
         state.need("patients.view")?;
         let id = util::req_int(payload.get("id").unwrap_or(&Value::Null), "id", 1, i64::MAX)?;
-        let filter = payload.get("filter").and_then(|v| v.as_str()).unwrap_or("all");
+        let filter = payload.get("filter").and_then(serde_json::Value::as_str).unwrap_or("all");
         let conn = state.conn.lock().unwrap();
         let p = util::query_one(&conn, "SELECT * FROM patients WHERE id = ?1", &[&id])?
             .ok_or_else(|| CmdError::new("NOT_FOUND", "Patient not found."))?;
@@ -488,11 +488,11 @@ pub fn attachment_upload(state: State<'_, AppState>, payload: Value) -> Result<V
         state.need("patients.attachments")?;
         let patient_id = util::req_int(payload.get("patientId").unwrap_or(&Value::Null), "patientId", 1, i64::MAX)?;
         let original = util::safe_filename(&util::req_text(payload.get("name").unwrap_or(&Value::Null), "name", 160)?);
-        let mime = payload.get("mime").and_then(|v| v.as_str()).unwrap_or("application/octet-stream");
+        let mime = payload.get("mime").and_then(serde_json::Value::as_str).unwrap_or("application/octet-stream");
         if !ALLOWED_MIME.contains(&mime) {
             return Err(CmdError::new("VALIDATION", format!("File type not supported: {mime}")));
         }
-        let b64 = payload.get("base64").and_then(|v| v.as_str()).unwrap_or("");
+        let b64 = payload.get("base64").and_then(serde_json::Value::as_str).unwrap_or("");
         if b64.is_empty() {
             return Err(CmdError::new("VALIDATION", "Empty file."));
         }

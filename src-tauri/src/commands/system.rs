@@ -56,7 +56,7 @@ pub fn app_status(state: State<'_, AppState>) -> Result<Value, String> {
 pub fn activate(state: State<'_, AppState>, payload: Value) -> Result<Value, String> {
     (|| -> CmdResult<Value> {
         state.gate("activate")?;
-        let code = payload.get("code").and_then(|v| v.as_str()).unwrap_or("");
+        let code = payload.get("code").and_then(serde_json::Value::as_str).unwrap_or("");
         if !crate::activation::verify_activation_code(code) {
             state.audit("activation.failed", "activation", None, "Failed activation attempt", None, None);
             return Err(CmdError::new("ACTIVATION_INVALID", "Invalid activation code. Please check the code and try again."));
@@ -87,7 +87,7 @@ pub fn setup_init(state: State<'_, AppState>, payload: Value) -> Result<Value, S
             return Err(CmdError::new("ALREADY_SETUP", "Setup has already been completed."));
         }
         let clinic_v = payload.get("clinic").unwrap_or(&Value::Null);
-        let dentists_v = payload.get("dentists").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+        let dentists_v = payload.get("dentists").and_then(serde_json::Value::as_array).cloned().unwrap_or_default();
         let admin_v = payload.get("admin").unwrap_or(&Value::Null);
         let prefs_v = payload.get("preferences").unwrap_or(&Value::Null);
         let backup_v = payload.get("backup").unwrap_or(&Value::Null);
@@ -101,7 +101,7 @@ pub fn setup_init(state: State<'_, AppState>, payload: Value) -> Result<Value, S
         if username.len() < 3 || !username.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-') {
             return Err(CmdError::new("VALIDATION", "Username must be 3–32 chars (letters, digits, . _ -)."));
         }
-        let password = admin_v.get("password").and_then(|v| v.as_str()).unwrap_or("");
+        let password = admin_v.get("password").and_then(serde_json::Value::as_str).unwrap_or("");
         if password.len() < 8 {
             return Err(CmdError::new("VALIDATION", "Password must be at least 8 characters."));
         }
@@ -121,7 +121,7 @@ pub fn setup_init(state: State<'_, AppState>, payload: Value) -> Result<Value, S
                 conn.execute("INSERT INTO dentists (name, phone, email, registration_no, active, sort_order, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, 1, ?5, ?6, ?6)",
                     params![nm, gv(dt, "phone", 64), gv(dt, "email", 120), gv(dt, "registrationNo", 120), i as i64, now])?;
                 let did = conn.last_insert_rowid();
-                if let Some(des) = dt.get("designations").and_then(|v| v.as_array()) {
+                if let Some(des) = dt.get("designations").and_then(serde_json::Value::as_array) {
                     for (j, g) in des.iter().take(10).enumerate() {
                         let s = g.as_str().unwrap_or("").trim().chars().take(200).collect::<String>();
                         if !s.is_empty() {
@@ -134,13 +134,13 @@ pub fn setup_init(state: State<'_, AppState>, payload: Value) -> Result<Value, S
             conn.execute("INSERT INTO users (full_name, username, password_hash, role_id, active, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, 1, ?5, ?5)",
                 params![full_name, username, hash, owner_role, now])?;
             let pref_map = [
-                ("date_format", prefs_v.get("dateFormat").and_then(|v| v.as_str()).unwrap_or("DD MMM YYYY")),
-                ("time_format", prefs_v.get("timeFormat").and_then(|v| v.as_str()).unwrap_or("12h")),
-                ("default_paper_size", prefs_v.get("paperSize").and_then(|v| v.as_str()).unwrap_or("A4")),
-                ("auto_lock_minutes", security_v.get("autoLock").and_then(|v| v.as_str()).unwrap_or("15")),
-                ("backup_location", backup_v.get("location").and_then(|v| v.as_str()).unwrap_or("")),
-                ("auto_backup_days", backup_v.get("scheduleDays").and_then(|v| v.as_str()).unwrap_or("7")),
-                ("invoice_tax_percent", prefs_v.get("taxPercent").and_then(|v| v.as_str()).unwrap_or("0")),
+                ("date_format", prefs_v.get("dateFormat").and_then(serde_json::Value::as_str).unwrap_or("DD MMM YYYY")),
+                ("time_format", prefs_v.get("timeFormat").and_then(serde_json::Value::as_str).unwrap_or("12h")),
+                ("default_paper_size", prefs_v.get("paperSize").and_then(serde_json::Value::as_str).unwrap_or("A4")),
+                ("auto_lock_minutes", security_v.get("autoLock").and_then(serde_json::Value::as_str).unwrap_or("15")),
+                ("backup_location", backup_v.get("location").and_then(serde_json::Value::as_str).unwrap_or("")),
+                ("auto_backup_days", backup_v.get("scheduleDays").and_then(serde_json::Value::as_str).unwrap_or("7")),
+                ("invoice_tax_percent", prefs_v.get("taxPercent").and_then(serde_json::Value::as_str).unwrap_or("0")),
             ];
             for (k, v) in pref_map {
                 conn.execute("UPDATE app_settings SET value = ?1, updated_at = ?2 WHERE key = ?3", params![v.chars().take(200).collect::<String>(), now, k])?;
@@ -165,7 +165,7 @@ pub fn login(state: State<'_, AppState>, payload: Value) -> Result<Value, String
     (|| -> CmdResult<Value> {
         state.gate("login")?;
         let username = util::req_text(payload.get("username").unwrap_or(&Value::Null), "Username", 32)?;
-        let password = payload.get("password").and_then(|v| v.as_str()).unwrap_or("");
+        let password = payload.get("password").and_then(serde_json::Value::as_str).unwrap_or("");
         let conn = state.conn.lock().unwrap();
         let u = util::query_one(&conn, "SELECT u.*, r.name AS role_name FROM users u JOIN roles r ON r.id = u.role_id WHERE LOWER(u.username) = LOWER(?1)", &[&username])?;
         let Some(u) = u else {
@@ -257,7 +257,7 @@ pub fn unlock(state: State<'_, AppState>, payload: Value) -> Result<Value, Strin
         if u.is_none() || !active {
             return Err(CmdError::new("AUTH_FAILED", "Account is disabled."));
         }
-        if !crate::auth::verify_password(payload.get("password").and_then(|v| v.as_str()).unwrap_or(""), &stored) {
+        if !crate::auth::verify_password(payload.get("password").and_then(serde_json::Value::as_str).unwrap_or(""), &stored) {
             drop(conn);
             state.audit("auth.unlock_failed", "user", Some(s.id), "Failed unlock attempt", None, None);
             return Err(CmdError::new("AUTH_FAILED", "Incorrect password."));
@@ -281,10 +281,10 @@ pub fn change_password(state: State<'_, AppState>, payload: Value) -> Result<Val
         let conn = state.conn.lock().unwrap();
         let u = util::query_one(&conn, "SELECT * FROM users WHERE id = ?1", &[&s.id])?
             .ok_or_else(|| CmdError::new("NOT_FOUND", "User not found."))?;
-        if !crate::auth::verify_password(payload.get("current").and_then(|v| v.as_str()).unwrap_or(""), u["password_hash"].as_str().unwrap_or("")) {
+        if !crate::auth::verify_password(payload.get("current").and_then(serde_json::Value::as_str).unwrap_or(""), u["password_hash"].as_str().unwrap_or("")) {
             return Err(CmdError::new("AUTH_FAILED", "Current password is incorrect."));
         }
-        let next = payload.get("next").and_then(|v| v.as_str()).unwrap_or("");
+        let next = payload.get("next").and_then(serde_json::Value::as_str).unwrap_or("");
         if next.len() < 8 {
             return Err(CmdError::new("VALIDATION", "New password must be at least 8 characters."));
         }
@@ -303,7 +303,7 @@ pub fn settings_get(state: State<'_, AppState>, payload: Value) -> Result<Value,
         state.gate("settings_get")?;
         let conn = state.conn.lock().unwrap();
         let mut map = serde_json::Map::new();
-        if let Some(keys) = payload.get("keys").and_then(|v| v.as_array()) {
+        if let Some(keys) = payload.get("keys").and_then(serde_json::Value::as_array) {
             if !keys.is_empty() {
                 for k in keys {
                     if let Some(key) = k.as_str() {
@@ -406,7 +406,7 @@ pub fn global_search(state: State<'_, AppState>, payload: Value) -> Result<Value
     (|| -> CmdResult<Value> {
         state.gate("global_search")?;
         let s = state.optional_session().ok_or_else(|| CmdError::new("UNAUTHENTICATED", "Please log in."))?;
-        let q = payload.get("query").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+        let q = payload.get("query").and_then(serde_json::Value::as_str).unwrap_or("").trim().to_string();
         if q.len() < 2 {
             return Ok(json!([]));
         }
@@ -517,7 +517,7 @@ pub fn notifications_list(state: State<'_, AppState>, payload: Value) -> Result<
             return Err(CmdError::new("UNAUTHENTICATED", "Please log in."));
         }
         let conn = state.conn.lock().unwrap();
-        let rows = if payload.get("unreadOnly").and_then(|v| v.as_bool()).unwrap_or(false) {
+        let rows = if payload.get("unreadOnly").and_then(serde_json::Value::as_bool).unwrap_or(false) {
             util::query_all(&conn, "SELECT * FROM notifications WHERE is_read = 0 ORDER BY id DESC LIMIT 200", params!())?
         } else {
             util::query_all(&conn, "SELECT * FROM notifications ORDER BY id DESC LIMIT 200", params!())?
@@ -536,7 +536,7 @@ pub fn notifications_mark(state: State<'_, AppState>, payload: Value) -> Result<
             return Err(CmdError::new("UNAUTHENTICATED", "Please log in."));
         }
         let conn = state.conn.lock().unwrap();
-        if payload.get("all").and_then(|v| v.as_bool()).unwrap_or(false) {
+        if payload.get("all").and_then(serde_json::Value::as_bool).unwrap_or(false) {
             conn.execute("UPDATE notifications SET is_read = 1", ())?;
         } else {
             let id = util::req_int(payload.get("id").unwrap_or(&Value::Null), "id", 1, i64::MAX)?;
@@ -582,19 +582,19 @@ pub fn audit_list(state: State<'_, AppState>, payload: Value) -> Result<Value, S
         let mut count_sql = String::from("SELECT COUNT(*) FROM audit_logs");
         let mut conds: Vec<String> = Vec::new();
         let mut args: Vec<String> = Vec::new();
-        if let Some(f) = payload.get("from").and_then(|v| v.as_str()) {
+        if let Some(f) = payload.get("from").and_then(serde_json::Value::as_str) {
             if !f.is_empty() { conds.push(format!("timestamp >= ?{}", args.len() + 1)); args.push(f.to_string()); }
         }
-        if let Some(t) = payload.get("to").and_then(|v| v.as_str()) {
+        if let Some(t) = payload.get("to").and_then(serde_json::Value::as_str) {
             if !t.is_empty() { conds.push(format!("timestamp <= ?{}", args.len() + 1)); args.push(format!("{t}T23:59:59")); }
         }
-        if let Some(u) = payload.get("userId").and_then(|v| v.as_i64()) {
+        if let Some(u) = payload.get("userId").and_then(serde_json::Value::as_i64) {
             if u > 0 { conds.push(format!("user_id = {u}")); }
         }
-        if let Some(a) = payload.get("action").and_then(|v| v.as_str()) {
+        if let Some(a) = payload.get("action").and_then(serde_json::Value::as_str) {
             if !a.is_empty() { conds.push(format!("action LIKE ?{}", args.len() + 1)); args.push(format!("%{a}%")); }
         }
-        if let Some(q) = payload.get("search").and_then(|v| v.as_str()) {
+        if let Some(q) = payload.get("search").and_then(serde_json::Value::as_str) {
             if !q.is_empty() {
                 conds.push(format!("(summary LIKE ?{} OR username LIKE ?{})", args.len() + 1, args.len() + 1));
                 args.push(format!("%{q}%"));
@@ -605,8 +605,8 @@ pub fn audit_list(state: State<'_, AppState>, payload: Value) -> Result<Value, S
             sql.push_str(&w);
             count_sql.push_str(&w);
         }
-        let page = payload.get("page").and_then(|v| v.as_i64()).unwrap_or(1).max(1);
-        let page_size = payload.get("pageSize").and_then(|v| v.as_i64()).unwrap_or(50).clamp(10, 200);
+        let page = payload.get("page").and_then(serde_json::Value::as_i64).unwrap_or(1).max(1);
+        let page_size = payload.get("pageSize").and_then(serde_json::Value::as_i64).unwrap_or(50).clamp(10, 200);
         let refs: Vec<&dyn rusqlite::ToSql> = args.iter().map(|v| v as &dyn rusqlite::ToSql).collect();
         let total: i64 = conn.query_row(&count_sql, &refs[..], |r| r.get(0)).unwrap_or(0);
         sql.push_str(&format!(" ORDER BY id DESC LIMIT {page_size} OFFSET {}", (page - 1) * page_size));
@@ -729,8 +729,8 @@ pub fn run_backup(state: &AppState, kind: &str, location: &str) -> CmdResult<Val
 pub fn backup_run(state: State<'_, AppState>, payload: Value) -> Result<Value, String> {
     (|| -> CmdResult<Value> {
         state.gate("backup_run")?;
-        let kind = payload.get("kind").and_then(|v| v.as_str()).unwrap_or("manual");
-        let location = payload.get("location").and_then(|v| v.as_str()).unwrap_or("");
+        let kind = payload.get("kind").and_then(serde_json::Value::as_str).unwrap_or("manual");
+        let location = payload.get("location").and_then(serde_json::Value::as_str).unwrap_or("");
         run_backup(&state, kind, location)
     })()
     .map_err(err)
@@ -752,8 +752,8 @@ pub fn restore_validate(state: State<'_, AppState>, payload: Value) -> Result<Va
     (|| -> CmdResult<Value> {
         state.gate("restore_validate")?;
         state.need("backup.restore")?;
-        let parsed = parse_container(payload.get("base64").and_then(|v| v.as_str()).unwrap_or(""))?;
-        Ok(json!({ "filename": payload.get("filename").and_then(|v| v.as_str()).unwrap_or(""), "createdAt": parsed.created_at, "appVersion": parsed.app_version,
+        let parsed = parse_container(payload.get("base64").and_then(serde_json::Value::as_str).unwrap_or(""))?;
+        Ok(json!({ "filename": payload.get("filename").and_then(serde_json::Value::as_str).unwrap_or(""), "createdAt": parsed.created_at, "appVersion": parsed.app_version,
             "schemaVersion": parsed.schema_version, "kind": parsed.kind, "clinicName": parsed.clinic_name, "attachments": parsed.files.len(), "checksumOk": parsed.checksum_ok }))
     })()
     .map_err(err)
@@ -764,10 +764,10 @@ pub fn restore_run(state: State<'_, AppState>, payload: Value) -> Result<Value, 
     (|| -> CmdResult<Value> {
         state.gate("restore_run")?;
         let s = state.need("backup.restore")?;
-        if payload.get("typed").and_then(|v| v.as_str()).unwrap_or("") != "RESTORE" {
+        if payload.get("typed").and_then(serde_json::Value::as_str).unwrap_or("") != "RESTORE" {
             return Err(CmdError::new("CONFIRM", "Type RESTORE to confirm."));
         }
-        let parsed = parse_container(payload.get("base64").and_then(|v| v.as_str()).unwrap_or(""))?;
+        let parsed = parse_container(payload.get("base64").and_then(serde_json::Value::as_str).unwrap_or(""))?;
         if !parsed.checksum_ok {
             return Err(CmdError::new("CHECKSUM", "Backup checksum mismatch. The file may be corrupted. Restore aborted."));
         }
@@ -829,13 +829,13 @@ pub fn restore_run(state: State<'_, AppState>, payload: Value) -> Result<Value, 
         let conn = state.conn.lock().unwrap();
         let user_ok: i64 = conn.query_row("SELECT COUNT(*) FROM users WHERE id = ?1", [s.id], |r| r.get(0)).unwrap_or(0);
         conn.execute("INSERT INTO restore_records (source_filename, restored_at, status, note, pre_restore_backup_id, performed_by) VALUES (?1, ?2, 'ok', ?3, NULL, ?4)",
-            params![payload.get("filename").and_then(|v| v.as_str()).unwrap_or("backup"), util::now_local(),
+            params![payload.get("filename").and_then(serde_json::Value::as_str).unwrap_or("backup"), util::now_local(),
                 format!("Restored {} attachment(s); pre-restore safety backup: {pre_filename}", parsed.files.len()),
                 if user_ok > 0 { Some(s.id) } else { None }])?;
         let id = conn.last_insert_rowid();
         drop(conn);
-        state.audit("restore.completed", "restore", Some(id), &format!("Database restored from {}", payload.get("filename").and_then(|v| v.as_str()).unwrap_or("backup")), None, None);
-        state.notify("success", "backup", "Restore completed", &format!("Data restored from {}. A pre-restore safety backup was kept.", payload.get("filename").and_then(|v| v.as_str()).unwrap_or("backup")), Some("restore"), Some(id), Some("backup"));
+        state.audit("restore.completed", "restore", Some(id), &format!("Database restored from {}", payload.get("filename").and_then(serde_json::Value::as_str).unwrap_or("backup")), None, None);
+        state.notify("success", "backup", "Restore completed", &format!("Data restored from {}. A pre-restore safety backup was kept.", payload.get("filename").and_then(serde_json::Value::as_str).unwrap_or("backup")), Some("restore"), Some(id), Some("backup"));
         Ok(json!({ "ok": true, "preRestoreId": pre["id"] }))
     })()
     .map_err(err)
@@ -846,9 +846,9 @@ pub fn restore_run(state: State<'_, AppState>, payload: Value) -> Result<Value, 
 pub fn report_run(state: State<'_, AppState>, payload: Value) -> Result<Value, String> {
     (|| -> CmdResult<Value> {
         state.gate("report_run")?;
-        let rtype = payload.get("type").and_then(|v| v.as_str()).unwrap_or("");
-        let from = payload.get("from").and_then(|v| v.as_str()).unwrap_or("2000-01-01");
-        let to = payload.get("to").and_then(|v| v.as_str()).unwrap_or("2100-01-01");
+        let rtype = payload.get("type").and_then(serde_json::Value::as_str).unwrap_or("");
+        let from = payload.get("from").and_then(serde_json::Value::as_str).unwrap_or("2000-01-01");
+        let to = payload.get("to").and_then(serde_json::Value::as_str).unwrap_or("2100-01-01");
         let conn = state.conn.lock().unwrap();
         let sum = |rows: &[Value], key: &str| -> i64 { rows.iter().map(|r| r[key].as_i64().unwrap_or(0)).sum() };
         match rtype {
@@ -1001,10 +1001,10 @@ pub fn run_report_query(state: &AppState, rtype: &str, from: &str, to: &str) -> 
 pub fn data_export(state: State<'_, AppState>, payload: Value) -> Result<Value, String> {
     (|| -> CmdResult<Value> {
         state.gate("data_export")?;
-        let module = payload.get("module").and_then(|v| v.as_str()).unwrap_or("");
-        let format = payload.get("format").and_then(|v| v.as_str()).unwrap_or("csv");
-        let from = payload.get("from").and_then(|v| v.as_str()).unwrap_or("2000-01-01");
-        let to = payload.get("to").and_then(|v| v.as_str()).unwrap_or("2100-01-01");
+        let module = payload.get("module").and_then(serde_json::Value::as_str).unwrap_or("");
+        let format = payload.get("format").and_then(serde_json::Value::as_str).unwrap_or("csv");
+        let from = payload.get("from").and_then(serde_json::Value::as_str).unwrap_or("2000-01-01");
+        let to = payload.get("to").and_then(serde_json::Value::as_str).unwrap_or("2100-01-01");
         let (columns, rows): (Vec<String>, Vec<Value>) = if module == "patients" {
             state.need("patients.export")?;
             let conn = state.conn.lock().unwrap();
@@ -1046,7 +1046,7 @@ pub fn data_reset(state: State<'_, AppState>, payload: Value) -> Result<Value, S
     (|| -> CmdResult<Value> {
         state.gate("data_reset")?;
         state.need("data.danger")?;
-        if payload.get("typed").and_then(|v| v.as_str()).unwrap_or("") != "DELETE ALL DATA" {
+        if payload.get("typed").and_then(serde_json::Value::as_str).unwrap_or("") != "DELETE ALL DATA" {
             return Err(CmdError::new("CONFIRM", "Type DELETE ALL DATA to confirm."));
         }
         run_backup(&state, "pre-reset", "")?;
@@ -1081,8 +1081,8 @@ pub fn logo_save(state: State<'_, AppState>, payload: Value) -> Result<Value, St
     (|| -> CmdResult<Value> {
         state.gate("logo_save")?;
         state.need("settings.manage")?;
-        let b64 = payload.get("base64").and_then(|v| v.as_str()).unwrap_or("");
-        let mime = payload.get("mime").and_then(|v| v.as_str()).unwrap_or("");
+        let b64 = payload.get("base64").and_then(serde_json::Value::as_str).unwrap_or("");
+        let mime = payload.get("mime").and_then(serde_json::Value::as_str).unwrap_or("");
         if !["image/png", "image/jpeg", "image/webp", "image/svg+xml"].contains(&mime) {
             return Err(CmdError::new("VALIDATION", "Logo must be PNG, JPEG, WebP, or SVG."));
         }

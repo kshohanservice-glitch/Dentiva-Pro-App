@@ -54,27 +54,27 @@ pub fn invoices_list(state: State<'_, AppState>, payload: Value) -> Result<Value
         let conn = state.conn.lock().unwrap();
         let mut conds: Vec<String> = Vec::new();
         let mut args: Vec<String> = Vec::new();
-        if let Some(p) = payload.get("patientId").and_then(|v| v.as_i64()) {
+        if let Some(p) = payload.get("patientId").and_then(serde_json::Value::as_i64) {
             if p > 0 { conds.push(format!("i.patient_id = {p}")); }
         }
-        if let Some(f) = payload.get("from").and_then(|v| v.as_str()) {
+        if let Some(f) = payload.get("from").and_then(serde_json::Value::as_str) {
             if !f.is_empty() { conds.push(format!("i.invoice_date >= ?{}", args.len() + 1)); args.push(f.to_string()); }
         }
-        if let Some(t) = payload.get("to").and_then(|v| v.as_str()) {
+        if let Some(t) = payload.get("to").and_then(serde_json::Value::as_str) {
             if !t.is_empty() { conds.push(format!("i.invoice_date <= ?{}", args.len() + 1)); args.push(t.to_string()); }
         }
-        if let Some(s) = payload.get("status").and_then(|v| v.as_str()) {
+        if let Some(s) = payload.get("status").and_then(serde_json::Value::as_str) {
             if !s.is_empty() { conds.push(format!("i.status = ?{}", args.len() + 1)); args.push(s.to_string()); }
         }
-        if let Some(q) = payload.get("search").and_then(|v| v.as_str()) {
+        if let Some(q) = payload.get("search").and_then(serde_json::Value::as_str) {
             if !q.is_empty() {
                 conds.push(format!("(i.invoice_no LIKE ?{} OR pt.name LIKE ?{} OR pt.code LIKE ?{})", args.len() + 1, args.len() + 1, args.len() + 1));
                 args.push(format!("%{q}%"));
             }
         }
         let w = if conds.is_empty() { String::new() } else { format!("WHERE {}", conds.join(" AND ")) };
-        let page = payload.get("page").and_then(|v| v.as_i64()).unwrap_or(1).max(1);
-        let page_size = payload.get("pageSize").and_then(|v| v.as_i64()).unwrap_or(25).clamp(5, 200);
+        let page = payload.get("page").and_then(serde_json::Value::as_i64).unwrap_or(1).max(1);
+        let page_size = payload.get("pageSize").and_then(serde_json::Value::as_i64).unwrap_or(25).clamp(5, 200);
         let refs: Vec<&dyn rusqlite::ToSql> = args.iter().map(|v| v as &dyn rusqlite::ToSql).collect();
         let total: i64 = conn.query_row(&format!("SELECT COUNT(*) FROM invoices i JOIN patients pt ON pt.id = i.patient_id {w}"), &refs[..], |r| r.get(0)).unwrap_or(0);
         let rows = util::query_all(&conn, &format!("SELECT i.*, pt.name AS patient_name, pt.code AS patient_code, d.name AS dentist_name
@@ -110,10 +110,10 @@ pub fn invoices_get(state: State<'_, AppState>, payload: Value) -> Result<Value,
 pub fn invoices_save(state: State<'_, AppState>, payload: Value) -> Result<Value, String> {
     (|| -> CmdResult<Value> {
         state.gate("invoices_save")?;
-        let is_update = payload.get("id").and_then(|v| v.as_i64()).unwrap_or(0) > 0;
+        let is_update = payload.get("id").and_then(serde_json::Value::as_i64).unwrap_or(0) > 0;
         let me = state.need(if is_update { "invoices.edit" } else { "invoices.create" })?;
         let patient_id = util::req_int(payload.get("patientId").unwrap_or(&Value::Null), "patientId", 1, i64::MAX)?;
-        let items = payload.get("items").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+        let items = payload.get("items").and_then(serde_json::Value::as_array).cloned().unwrap_or_default();
         if items.is_empty() {
             return Err(CmdError::new("VALIDATION", "At least one invoice item is required."));
         }
@@ -138,15 +138,15 @@ pub fn invoices_save(state: State<'_, AppState>, payload: Value) -> Result<Value
         let mut rid = 0i64;
         let mut invoice_no = String::new();
         let notes = util::opt_text(payload.get("notes").unwrap_or(&Value::Null), 2000);
-        let visit_id = payload.get("visitId").and_then(|v| v.as_i64()).filter(|n| *n > 0);
-        let dentist_id = payload.get("dentistId").and_then(|v| v.as_i64()).filter(|n| *n > 0);
+        let visit_id = payload.get("visitId").and_then(serde_json::Value::as_i64).filter(|n| *n > 0);
+        let dentist_id = payload.get("dentistId").and_then(serde_json::Value::as_i64).filter(|n| *n > 0);
         txn(&conn, || {
             if is_update {
-                rid = payload.get("id").and_then(|v| v.as_i64()).unwrap_or(0);
+                rid = payload.get("id").and_then(serde_json::Value::as_i64).unwrap_or(0);
                 let ex = util::query_one(&conn, "SELECT * FROM invoices WHERE id = ?1", &[&rid])?
                     .ok_or_else(|| CmdError::new("NOT_FOUND", "Invoice not found."))?;
                 let paid = ex["paid_paisa"].as_i64().unwrap_or(0);
-                if paid > 0 && !payload.get("allowEditPaid").and_then(|v| v.as_bool()).unwrap_or(false) {
+                if paid > 0 && !payload.get("allowEditPaid").and_then(serde_json::Value::as_bool).unwrap_or(false) {
                     return Err(CmdError::new("HAS_PAYMENTS", "This invoice has payments recorded. Editing amounts is blocked to protect history."));
                 }
                 if total < paid {
@@ -210,27 +210,27 @@ pub fn payments_list(state: State<'_, AppState>, payload: Value) -> Result<Value
         let conn = state.conn.lock().unwrap();
         let mut conds: Vec<String> = Vec::new();
         let mut args: Vec<String> = Vec::new();
-        if let Some(f) = payload.get("from").and_then(|v| v.as_str()) {
+        if let Some(f) = payload.get("from").and_then(serde_json::Value::as_str) {
             if !f.is_empty() { conds.push(format!("p.payment_date >= ?{}", args.len() + 1)); args.push(f.to_string()); }
         }
-        if let Some(t) = payload.get("to").and_then(|v| v.as_str()) {
+        if let Some(t) = payload.get("to").and_then(serde_json::Value::as_str) {
             if !t.is_empty() { conds.push(format!("p.payment_date <= ?{}", args.len() + 1)); args.push(t.to_string()); }
         }
-        if let Some(m) = payload.get("method").and_then(|v| v.as_str()) {
+        if let Some(m) = payload.get("method").and_then(serde_json::Value::as_str) {
             if !m.is_empty() { conds.push(format!("p.method = ?{}", args.len() + 1)); args.push(m.to_string()); }
         }
-        if let Some(p) = payload.get("patientId").and_then(|v| v.as_i64()) {
+        if let Some(p) = payload.get("patientId").and_then(serde_json::Value::as_i64) {
             if p > 0 { conds.push(format!("p.patient_id = {p}")); }
         }
-        if let Some(q) = payload.get("search").and_then(|v| v.as_str()) {
+        if let Some(q) = payload.get("search").and_then(serde_json::Value::as_str) {
             if !q.is_empty() {
                 conds.push(format!("(p.receipt_no LIKE ?{} OR pt.name LIKE ?{} OR pt.code LIKE ?{})", args.len() + 1, args.len() + 1, args.len() + 1));
                 args.push(format!("%{q}%"));
             }
         }
         let w = if conds.is_empty() { String::new() } else { format!("WHERE {}", conds.join(" AND ")) };
-        let page = payload.get("page").and_then(|v| v.as_i64()).unwrap_or(1).max(1);
-        let page_size = payload.get("pageSize").and_then(|v| v.as_i64()).unwrap_or(25).clamp(5, 200);
+        let page = payload.get("page").and_then(serde_json::Value::as_i64).unwrap_or(1).max(1);
+        let page_size = payload.get("pageSize").and_then(serde_json::Value::as_i64).unwrap_or(25).clamp(5, 200);
         let refs: Vec<&dyn rusqlite::ToSql> = args.iter().map(|v| v as &dyn rusqlite::ToSql).collect();
         let total: i64 = conn.query_row(&format!("SELECT COUNT(*) FROM payments p JOIN patients pt ON pt.id = p.patient_id {w}"), &refs[..], |r| r.get(0)).unwrap_or(0);
         let rows = util::query_all(&conn, &format!("SELECT p.*, pt.name AS patient_name, pt.code AS patient_code, i.invoice_no, u.full_name AS created_by_name
@@ -252,21 +252,21 @@ pub fn payments_create(state: State<'_, AppState>, payload: Value) -> Result<Val
         if amount <= 0 {
             return Err(CmdError::new("VALIDATION", "Payment amount must be greater than zero."));
         }
-        let method = payload.get("method").and_then(|v| v.as_str()).unwrap_or("Cash");
+        let method = payload.get("method").and_then(serde_json::Value::as_str).unwrap_or("Cash");
         if !PAY_METHODS.contains(&method) {
             return Err(CmdError::new("VALIDATION", "Invalid payment method."));
         }
         let date = util::req_date(payload.get("paymentDate").unwrap_or(&json!(util::today())), "paymentDate")?;
-        let alloc_req = payload.get("allocations").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+        let alloc_req = payload.get("allocations").and_then(serde_json::Value::as_array).cloned().unwrap_or_default();
         let conn = state.conn.lock().unwrap();
         let mut receipt_no = String::new();
         let mut payment_id = 0i64;
         txn(&conn, || {
             receipt_no = next_seq(&conn, "receipt_prefix", "receipt_next");
             let first_invoice: Option<i64> = if alloc_req.len() == 1 {
-                alloc_req[0].get("invoiceId").and_then(|v| v.as_i64()).filter(|n| *n > 0)
+                alloc_req[0].get("invoiceId").and_then(serde_json::Value::as_i64).filter(|n| *n > 0)
             } else {
-                payload.get("invoiceId").and_then(|v| v.as_i64()).filter(|n| *n > 0)
+                payload.get("invoiceId").and_then(serde_json::Value::as_i64).filter(|n| *n > 0)
             };
             conn.execute("INSERT INTO payments (receipt_no, invoice_id, patient_id, amount_paisa, method, reference, payment_date, notes, created_by, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
                 params![receipt_no, first_invoice, patient_id, amount, method, util::opt_text(payload.get("reference").unwrap_or(&Value::Null), 120), date,
@@ -358,14 +358,14 @@ pub fn inventory_list(state: State<'_, AppState>, payload: Value) -> Result<Valu
         state.gate("inventory_list")?;
         state.need("inventory.view")?;
         let conn = state.conn.lock().unwrap();
-        let q = payload.get("search").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+        let q = payload.get("search").and_then(serde_json::Value::as_str).unwrap_or("").trim().to_string();
         let mut conds: Vec<String> = Vec::new();
         let mut args: Vec<String> = Vec::new();
         if !q.is_empty() {
             conds.push(format!("(i.name LIKE ?{} OR i.sku LIKE ?{} OR i.category LIKE ?{})", args.len() + 1, args.len() + 1, args.len() + 1));
             args.push(format!("%{q}%"));
         }
-        if let Some(c) = payload.get("category").and_then(|v| v.as_str()) {
+        if let Some(c) = payload.get("category").and_then(serde_json::Value::as_str) {
             if !c.is_empty() { conds.push(format!("i.category = ?{}", args.len() + 1)); args.push(c.to_string()); }
         }
         let w = if conds.is_empty() { String::new() } else { format!("WHERE {}", conds.join(" AND ")) };
@@ -375,10 +375,10 @@ pub fn inventory_list(state: State<'_, AppState>, payload: Value) -> Result<Valu
             (SELECT MIN(expiry_date) FROM inventory_batches b WHERE b.item_id = i.id AND b.qty_remaining > 0 AND b.expiry_date IS NOT NULL) AS nearest_expiry
             FROM inventory_items i LEFT JOIN suppliers s ON s.id = i.supplier_id {w} ORDER BY i.name"), &refs)?;
         let mut out = rows;
-        if payload.get("lowStockOnly").and_then(|v| v.as_bool()).unwrap_or(false) {
+        if payload.get("lowStockOnly").and_then(serde_json::Value::as_bool).unwrap_or(false) {
             out.retain(|r| r["stock"].as_i64().unwrap_or(0) <= r["reorder_level"].as_i64().unwrap_or(0));
         }
-        if payload.get("expiringOnly").and_then(|v| v.as_bool()).unwrap_or(false) {
+        if payload.get("expiringOnly").and_then(serde_json::Value::as_bool).unwrap_or(false) {
             let cutoff = (chrono::Local::now() + chrono::Duration::days(90)).format("%Y-%m-%d").to_string();
             out.retain(|r| r["nearest_expiry"].as_str().map(|e| e <= cutoff.as_str()).unwrap_or(false));
         }
@@ -417,13 +417,13 @@ pub fn inventory_save(state: State<'_, AppState>, payload: Value) -> Result<Valu
         let conn = state.conn.lock().unwrap();
         let category = { let c = util::opt_text(payload.get("category").unwrap_or(&Value::Null), 80); if c.is_empty() { "General".to_string() } else { c } };
         let unit = { let u = util::opt_text(payload.get("unit").unwrap_or(&Value::Null), 24); if u.is_empty() { "pcs".to_string() } else { u } };
-        let supplier_id = payload.get("supplierId").and_then(|v| v.as_i64()).filter(|n| *n > 0);
+        let supplier_id = payload.get("supplierId").and_then(serde_json::Value::as_i64).filter(|n| *n > 0);
         let purchase = util::req_money(payload.get("purchasePricePaisa").unwrap_or(&Value::Null), "purchase price")?;
         let internal = util::req_money(payload.get("internalValuePaisa").unwrap_or(&Value::Null), "internal value")?;
         let reorder = util::req_int(payload.get("reorderLevel").unwrap_or(&json!(0)), "reorder level", 0, 1_000_000)?;
-        let expiry_managed = if payload.get("expiryManaged").and_then(|v| v.as_bool()).unwrap_or(false) { 1 } else { 0 };
+        let expiry_managed = if payload.get("expiryManaged").and_then(serde_json::Value::as_bool).unwrap_or(false) { 1 } else { 0 };
         let notes = util::opt_text(payload.get("notes").unwrap_or(&Value::Null), 2000);
-        let active = if payload.get("active").and_then(|v| v.as_bool()).unwrap_or(true) { 1 } else { 0 };
+        let active = if payload.get("active").and_then(serde_json::Value::as_bool).unwrap_or(true) { 1 } else { 0 };
         if let Some(id) = util::opt_id(payload.get("id").unwrap_or(&Value::Null)) {
             let dup: i64 = conn.query_row("SELECT COUNT(*) FROM inventory_items WHERE sku = ?1 AND id != ?2", params![sku, id], |r| r.get(0))?;
             if dup > 0 {
@@ -466,12 +466,12 @@ fn stock_move(state: &AppState, kind: &str, payload: &Value) -> CmdResult<Value>
     txn(&conn, || {
         if kind == "receive" {
             let qty = util::req_int(payload.get("qty").unwrap_or(&Value::Null), "qty", 1, 1_000_000)?;
-            let expiry: Option<String> = if payload.get("expiryDate").is_some() && !payload.get("expiryDate").and_then(|v| v.as_str()).unwrap_or("").is_empty() {
+            let expiry: Option<String> = if payload.get("expiryDate").is_some() && !payload.get("expiryDate").and_then(serde_json::Value::as_str).unwrap_or("").is_empty() {
                 Some(util::req_date(payload.get("expiryDate").unwrap_or(&Value::Null), "expiryDate")?)
             } else {
                 None
             };
-            let purchase_date = if payload.get("purchaseDate").is_some() && !payload.get("purchaseDate").and_then(|v| v.as_str()).unwrap_or("").is_empty() {
+            let purchase_date = if payload.get("purchaseDate").is_some() && !payload.get("purchaseDate").and_then(serde_json::Value::as_str).unwrap_or("").is_empty() {
                 util::req_date(payload.get("purchaseDate").unwrap_or(&Value::Null), "purchaseDate")?
             } else {
                 util::today()
@@ -479,7 +479,7 @@ fn stock_move(state: &AppState, kind: &str, payload: &Value) -> CmdResult<Value>
             conn.execute("INSERT INTO inventory_batches (item_id, batch_no, expiry_date, qty_received, qty_remaining, purchase_price_paisa, supplier_id, purchase_date, notes, created_at) VALUES (?1, ?2, ?3, ?4, ?4, ?5, ?6, ?7, ?8, ?9)",
                 params![item_id, util::opt_text(payload.get("batchNo").unwrap_or(&Value::Null), 64), expiry, qty,
                     util::req_money(payload.get("purchasePricePaisa").unwrap_or(&Value::Null), "purchase price")?,
-                    payload.get("supplierId").and_then(|v| v.as_i64()).filter(|n| *n > 0), purchase_date, util::opt_text(payload.get("note").unwrap_or(&Value::Null), 500), now])?;
+                    payload.get("supplierId").and_then(serde_json::Value::as_i64).filter(|n| *n > 0), purchase_date, util::opt_text(payload.get("note").unwrap_or(&Value::Null), 500), now])?;
             batch_id = Some(conn.last_insert_rowid());
             let bal = stock_balance(&conn, item_id);
             conn.execute("INSERT INTO inventory_transactions (item_id, batch_id, kind, qty_delta, balance_after, reason, ref_type, performed_by, created_at) VALUES (?1, ?2, 'receive', ?3, ?4, ?5, '', ?6, ?7)",
@@ -566,7 +566,7 @@ pub fn suppliers_list(state: State<'_, AppState>, payload: Value) -> Result<Valu
         state.gate("suppliers_list")?;
         state.need("inventory.view")?;
         let conn = state.conn.lock().unwrap();
-        let q = payload.get("search").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+        let q = payload.get("search").and_then(serde_json::Value::as_str).unwrap_or("").trim().to_string();
         if q.is_empty() {
             util::query_all(&conn, "SELECT * FROM suppliers ORDER BY name", params!()).map(|v| json!(v))
         } else {
@@ -585,7 +585,7 @@ pub fn suppliers_save(state: State<'_, AppState>, payload: Value) -> Result<Valu
         let name = util::req_text(payload.get("name").unwrap_or(&Value::Null), "Supplier name", 160)?;
         let conn = state.conn.lock().unwrap();
         let g = |k: &str, m: usize| util::opt_text(payload.get(k).unwrap_or(&Value::Null), m);
-        let active = if payload.get("active").and_then(|v| v.as_bool()).unwrap_or(true) { 1 } else { 0 };
+        let active = if payload.get("active").and_then(serde_json::Value::as_bool).unwrap_or(true) { 1 } else { 0 };
         if let Some(id) = util::opt_id(payload.get("id").unwrap_or(&Value::Null)) {
             conn.execute("UPDATE suppliers SET name = ?1, phone = ?2, email = ?3, address = ?4, notes = ?5, active = ?6 WHERE id = ?7",
                 params![name, g("phone", 48), g("email", 120), g("address", 500), g("notes", 2000), active, id])?;
@@ -630,7 +630,7 @@ pub fn categories_list(state: State<'_, AppState>, payload: Value) -> Result<Val
     (|| -> CmdResult<Value> {
         state.gate("categories_list")?;
         let conn = state.conn.lock().unwrap();
-        let kind = payload.get("kind").and_then(|v| v.as_str()).unwrap_or("");
+        let kind = payload.get("kind").and_then(serde_json::Value::as_str).unwrap_or("");
         if kind.is_empty() {
             util::query_all(&conn, "SELECT * FROM accounting_categories ORDER BY kind, name", params!()).map(|v| json!(v))
         } else {
@@ -645,14 +645,14 @@ pub fn categories_save(state: State<'_, AppState>, payload: Value) -> Result<Val
     (|| -> CmdResult<Value> {
         state.gate("categories_save")?;
         state.need("accounting.manage")?;
-        let kind = payload.get("kind").and_then(|v| v.as_str()).unwrap_or("");
+        let kind = payload.get("kind").and_then(serde_json::Value::as_str).unwrap_or("");
         if kind != "income" && kind != "expense" {
             return Err(CmdError::new("VALIDATION", "Category kind must be income or expense."));
         }
         let name = util::req_text(payload.get("name").unwrap_or(&Value::Null), "Category name", 120)?;
         let conn = state.conn.lock().unwrap();
         let desc = util::opt_text(payload.get("description").unwrap_or(&Value::Null), 300);
-        let active = if payload.get("active").and_then(|v| v.as_bool()).unwrap_or(true) { 1 } else { 0 };
+        let active = if payload.get("active").and_then(serde_json::Value::as_bool).unwrap_or(true) { 1 } else { 0 };
         if let Some(id) = util::opt_id(payload.get("id").unwrap_or(&Value::Null)) {
             conn.execute("UPDATE accounting_categories SET kind = ?1, name = ?2, description = ?3, active = ?4 WHERE id = ?5", params![kind, name, desc, active, id])?;
             drop(conn);
@@ -675,13 +675,13 @@ fn money_entries(state: &AppState, table: &str, payload: &Value, list_only: bool
         let conn = state.conn.lock().unwrap();
         let mut conds: Vec<String> = Vec::new();
         let mut args: Vec<String> = Vec::new();
-        if let Some(f) = payload.get("from").and_then(|v| v.as_str()) {
+        if let Some(f) = payload.get("from").and_then(serde_json::Value::as_str) {
             if !f.is_empty() { conds.push(format!("e.{date_col} >= ?{}", args.len() + 1)); args.push(f.to_string()); }
         }
-        if let Some(t) = payload.get("to").and_then(|v| v.as_str()) {
+        if let Some(t) = payload.get("to").and_then(serde_json::Value::as_str) {
             if !t.is_empty() { conds.push(format!("e.{date_col} <= ?{}", args.len() + 1)); args.push(t.to_string()); }
         }
-        if let Some(c) = payload.get("categoryId").and_then(|v| v.as_i64()) {
+        if let Some(c) = payload.get("categoryId").and_then(serde_json::Value::as_i64) {
             if c > 0 { conds.push(format!("e.category_id = {c}")); }
         }
         let w = if conds.is_empty() { String::new() } else { format!("WHERE {}", conds.join(" AND ")) };
@@ -689,7 +689,7 @@ fn money_entries(state: &AppState, table: &str, payload: &Value, list_only: bool
         return util::query_all(&conn, &format!("SELECT e.*, c.name AS category_name, u.full_name AS created_by_name FROM {table} e LEFT JOIN accounting_categories c ON c.id = e.category_id LEFT JOIN users u ON u.id = e.created_by {w} ORDER BY e.{date_col} DESC, e.id DESC LIMIT 2000"), &refs).map(|v| json!(v));
     }
     let me = state.need("accounting.manage")?;
-    if payload.get("delete").and_then(|v| v.as_bool()).unwrap_or(false) {
+    if payload.get("delete").and_then(serde_json::Value::as_bool).unwrap_or(false) {
         let id = util::req_int(payload.get("id").unwrap_or(&Value::Null), "id", 1, i64::MAX)?;
         let conn = state.conn.lock().unwrap();
         let before = util::query_one(&conn, &format!("SELECT * FROM {table} WHERE id = ?1"), &[&id])?;
@@ -704,7 +704,7 @@ fn money_entries(state: &AppState, table: &str, payload: &Value, list_only: bool
     }
     let date = util::req_date(payload.get("date").unwrap_or(&json!(util::today())), "date")?;
     let conn = state.conn.lock().unwrap();
-    let category_id = payload.get("categoryId").and_then(|v| v.as_i64()).filter(|n| *n > 0);
+    let category_id = payload.get("categoryId").and_then(serde_json::Value::as_i64).filter(|n| *n > 0);
     let method = { let m = util::opt_text(payload.get("method").unwrap_or(&Value::Null), 32); if m.is_empty() { "Cash".to_string() } else { m } };
     let reference = util::opt_text(payload.get("reference").unwrap_or(&Value::Null), 120);
     let note = util::opt_text(payload.get("note").unwrap_or(&Value::Null), 2000);
@@ -753,8 +753,8 @@ pub fn accounting_summary(state: State<'_, AppState>, payload: Value) -> Result<
         state.gate("accounting_summary")?;
         state.need("accounting.view")?;
         let conn = state.conn.lock().unwrap();
-        let from = payload.get("from").and_then(|v| v.as_str()).unwrap_or("2000-01-01");
-        let to = payload.get("to").and_then(|v| v.as_str()).unwrap_or("2100-01-01");
+        let from = payload.get("from").and_then(serde_json::Value::as_str).unwrap_or("2000-01-01");
+        let to = payload.get("to").and_then(serde_json::Value::as_str).unwrap_or("2100-01-01");
         let income: i64 = conn.query_row("SELECT COALESCE(SUM(amount_paisa),0) FROM income_records WHERE income_date BETWEEN ?1 AND ?2", params![from, to], |r| r.get(0)).unwrap_or(0);
         let expense: i64 = conn.query_row("SELECT COALESCE(SUM(amount_paisa),0) FROM expenses WHERE expense_date BETWEEN ?1 AND ?2", params![from, to], |r| r.get(0)).unwrap_or(0);
         let by_category = util::query_all(&conn, "SELECT c.name, c.kind, SUM(e.amount_paisa) AS total FROM expenses e LEFT JOIN accounting_categories c ON c.id = e.category_id WHERE e.expense_date BETWEEN ?1 AND ?2 GROUP BY c.name UNION ALL SELECT c.name, c.kind, SUM(e.amount_paisa) FROM income_records e LEFT JOIN accounting_categories c ON c.id = e.category_id WHERE e.income_date BETWEEN ?1 AND ?2 GROUP BY c.name", &[&from, &to, &from, &to])?;

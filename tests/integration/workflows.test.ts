@@ -5,6 +5,14 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { browserInvoke, __resetForTests, __testActivate } from '../../src/backend/browserBackend';
 import { CommandError } from '../../src/lib/ipc';
 
+// Tests must be date-independent: the backend stamps queue entries (and other
+// day-scoped rows) with the real local day, so every test date derives from it.
+const TODAY = (() => {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+})();
+
 // NOTE: the genuine product code NEVER appears in source (see SECURITY.md).
 // Integration tests activate via the test-only __testActivate() hook; wrong-code
 // rejection still goes through the real 'activate' command below.
@@ -96,14 +104,14 @@ describe('patient journey', () => {
     expect(list.total).toBeGreaterThanOrEqual(2);
 
     const dentists = (await browserInvoke('dentists_list', {})) as Array<{ id: number }>;
-    await browserInvoke('visits_create', { patientId: p.id, visitDate: '2026-09-26', dentistId: dentists[0].id, complaint: 'Pain', diagnosis: 'Caries' });
+    await browserInvoke('visits_create', { patientId: p.id, visitDate: TODAY, dentistId: dentists[0].id, complaint: 'Pain', diagnosis: 'Caries' });
 
     await browserInvoke('chart_set', { patientId: p.id, teeth: ['16', '17'], condition: 'caries', notes: 'Deep' });
     const chart = (await browserInvoke('chart_get', { patientId: p.id })) as { latest: Record<string, { condition_code: string }> };
     expect(chart.latest['16'].condition_code).toBe('caries');
 
     const rx = (await browserInvoke('prescriptions_save', {
-      patientId: p.id, dentistId: dentists[0].id, prescriptionDate: '2026-09-26',
+      patientId: p.id, dentistId: dentists[0].id, prescriptionDate: TODAY,
       cc_text: 'Pain', oe_text: 'Caries',
       items: [
         { medicine_name: 'Napa 500mg', form: 'Tablet', morning: '1', night: '1', duration: '7 days' },
@@ -113,8 +121,8 @@ describe('patient journey', () => {
     const rxGet = (await browserInvoke('prescriptions_get', { id: rx.id })) as { items: unknown[] };
     expect(rxGet.items.length).toBe(2);
 
-    await browserInvoke('treatment_records_create', { patientId: p.id, customName: 'Filling', toothCodes: '16', price_paisa: 300000, treatmentDate: '2026-09-26', dentistId: dentists[0].id });
-    await browserInvoke('referrals_save', { patientId: p.id, referredTo: 'City Hospital', specialty: 'Oral Surgery', reason: 'Impaction', referralDate: '2026-09-26' });
+    await browserInvoke('treatment_records_create', { patientId: p.id, customName: 'Filling', toothCodes: '16', price_paisa: 300000, treatmentDate: TODAY, dentistId: dentists[0].id });
+    await browserInvoke('referrals_save', { patientId: p.id, referredTo: 'City Hospital', specialty: 'Oral Surgery', reason: 'Impaction', referralDate: TODAY });
 
     const timeline = (await browserInvoke('patient_timeline', { id: p.id, filter: 'all' })) as unknown[];
     expect(timeline.length).toBeGreaterThanOrEqual(5);
@@ -132,15 +140,15 @@ describe('appointments & queue', () => {
     await browserInvoke('login', { username: 'owner', password: 'Owner@12345' });
     const p = (await browserInvoke('patients_create', { name: 'Queue Patient' })) as { id: number };
     const ap = (await browserInvoke('appointments_save', {
-      patientId: p.id, apptDate: '2026-09-26', apptTime: '10:00', reason: 'Checkup',
+      patientId: p.id, apptDate: TODAY, apptTime: '10:00', reason: 'Checkup',
     })) as { id: number };
     const q = (await browserInvoke('queue_add', { patientId: p.id, appointmentId: ap.id })) as { queueNo: number };
     expect(q.queueNo).toBe(1);
-    await browserInvoke('queue_action', { id: (await browserInvoke('queue_list', { date: '2026-09-26' }) as Array<{ id: number }>)[0].id, action: 'call' });
-    await browserInvoke('queue_action', { id: (await browserInvoke('queue_list', { date: '2026-09-26' }) as Array<{ id: number }>)[0].id, action: 'start' });
-    const done = (await browserInvoke('queue_action', { id: (await browserInvoke('queue_list', { date: '2026-09-26' }) as Array<{ id: number }>)[0].id, action: 'complete' })) as { status: string };
+    await browserInvoke('queue_action', { id: (await browserInvoke('queue_list', { date: TODAY }) as Array<{ id: number }>)[0].id, action: 'call' });
+    await browserInvoke('queue_action', { id: (await browserInvoke('queue_list', { date: TODAY }) as Array<{ id: number }>)[0].id, action: 'start' });
+    const done = (await browserInvoke('queue_action', { id: (await browserInvoke('queue_list', { date: TODAY }) as Array<{ id: number }>)[0].id, action: 'complete' })) as { status: string };
     expect(done.status).toBe('completed');
-    const appts = (await browserInvoke('appointments_list', { from: '2026-09-26', to: '2026-09-26' })) as Array<{ status: string }>;
+    const appts = (await browserInvoke('appointments_list', { from: TODAY, to: TODAY })) as Array<{ status: string }>;
     expect(appts[0].status).toBe('Completed');
   });
 });
@@ -153,23 +161,23 @@ describe('billing integrity', () => {
     const t = (await browserInvoke('treatments_save', { code: 'SCL-01', name: 'Scaling', default_price_paisa: 50000 })) as { id: number };
 
     const inv = (await browserInvoke('invoices_save', {
-      patientId: p.id, invoiceDate: '2026-09-26',
+      patientId: p.id, invoiceDate: TODAY,
       items: [{ treatmentId: t.id, description: 'Scaling', qty: 1, unitPricePaisa: 50000 }],
     })) as { id: number; invoiceNo: string };
 
     // partial payment
-    await browserInvoke('payments_create', { patientId: p.id, amountPaisa: 20000, method: 'bKash', paymentDate: '2026-09-26', invoiceId: inv.id });
+    await browserInvoke('payments_create', { patientId: p.id, amountPaisa: 20000, method: 'bKash', paymentDate: TODAY, invoiceId: inv.id });
     let got = (await browserInvoke('invoices_get', { id: inv.id })) as { status: string; paid_paisa: number };
     expect(got.status).toBe('Partially Paid');
     expect(got.paid_paisa).toBe(20000);
 
     // overpay blocked
     await expect(
-      browserInvoke('payments_create', { patientId: p.id, amountPaisa: 40000, method: 'Cash', paymentDate: '2026-09-26', invoiceId: inv.id }),
+      browserInvoke('payments_create', { patientId: p.id, amountPaisa: 40000, method: 'Cash', paymentDate: TODAY, invoiceId: inv.id }),
     ).rejects.toMatchObject({ code: 'VALIDATION' });
 
     // pay remainder
-    await browserInvoke('payments_create', { patientId: p.id, amountPaisa: 30000, method: 'Cash', paymentDate: '2026-09-26', invoiceId: inv.id });
+    await browserInvoke('payments_create', { patientId: p.id, amountPaisa: 30000, method: 'Cash', paymentDate: TODAY, invoiceId: inv.id });
     got = (await browserInvoke('invoices_get', { id: inv.id })) as { status: string };
     expect(got.status).toBe('Paid');
 
@@ -182,7 +190,7 @@ describe('billing integrity', () => {
     await expect(browserInvoke('invoices_delete', { id: inv.id })).rejects.toMatchObject({ code: 'HAS_PAYMENTS' });
 
     // reverse a payment -> due returns
-    const pays = (await browserInvoke('payments_list', { from: '2026-09-26', to: '2026-09-26' })) as { rows: Array<{ id: number }> };
+    const pays = (await browserInvoke('payments_list', { from: TODAY, to: TODAY })) as { rows: Array<{ id: number }> };
     await browserInvoke('payments_reverse', { id: pays.rows[0].id, reason: 'test reversal' });
     got = (await browserInvoke('invoices_get', { id: inv.id })) as { status: string };
     expect(got.status).toBe('Partially Paid');
@@ -211,8 +219,8 @@ describe('inventory & accounting', () => {
     const got2 = (await browserInvoke('inventory_get', { id: item.id })) as { stock: number };
     expect(got2.stock).toBe(10);
 
-    await browserInvoke('expenses_save', { amountPaisa: 500000, date: '2026-09-26', note: 'rent' });
-    await browserInvoke('incomes_save', { amountPaisa: 100000, date: '2026-09-26', note: 'misc' });
+    await browserInvoke('expenses_save', { amountPaisa: 500000, date: TODAY, note: 'rent' });
+    await browserInvoke('incomes_save', { amountPaisa: 100000, date: TODAY, note: 'misc' });
     const sum = (await browserInvoke('accounting_summary', { from: '2026-09-01', to: '2026-09-30' })) as { income: number; expense: number; net: number };
     expect(sum.income).toBe(100000);
     expect(sum.expense).toBe(500000);

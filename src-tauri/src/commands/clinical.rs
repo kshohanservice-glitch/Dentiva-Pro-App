@@ -40,7 +40,7 @@ pub fn visits_create(state: State<'_, AppState>, payload: Value) -> Result<Value
         let me = state.need("clinical.create_visit")?;
         let patient_id = util::req_int(payload.get("patientId").unwrap_or(&Value::Null), "patientId", 1, i64::MAX)?;
         let visit_date = util::req_date(payload.get("visitDate").unwrap_or(&json!(util::today())), "visitDate")?;
-        let follow_up = payload.get("followUpDate").and_then(|v| v.as_str()).filter(|s| !s.is_empty()).map(|s| s.to_string());
+        let follow_up = payload.get("followUpDate").and_then(serde_json::Value::as_str).filter(|s| !s.is_empty()).map(ToString::to_string);
         let conn = state.conn.lock().unwrap();
         let g = |k: &str| util::opt_text(payload.get(k).unwrap_or(&Value::Null), 4000);
         conn.execute("INSERT INTO visits (patient_id, visit_date, dentist_id, complaint, history, examination, diagnosis, procedure_notes, advice, follow_up_date, referral_note, notes, created_by, created_at, updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?14)",
@@ -67,10 +67,10 @@ pub fn visits_update(state: State<'_, AppState>, payload: Value) -> Result<Value
         let before = util::query_one(&conn, "SELECT * FROM visits WHERE id = ?1", &[&id])?
             .ok_or_else(|| CmdError::new("NOT_FOUND", "Visit not found."))?;
         let fb = |k: &str| before[k].as_str().unwrap_or("").to_string();
-        let g = |k: &str| -> String { payload.get(k).and_then(|v| v.as_str()).unwrap_or(&fb(k)).chars().take(4000).collect::<String>().trim().to_string() };
+        let g = |k: &str| -> String { payload.get(k).and_then(serde_json::Value::as_str).unwrap_or(&fb(k)).chars().take(4000).collect::<String>().trim().to_string() };
         let visit_date = if payload.get("visitDate").is_some() { util::req_date(payload.get("visitDate").unwrap_or(&Value::Null), "visitDate")? } else { fb("visit_date") };
         let dentist_id: Option<i64> = if payload.get("dentistId").is_some() { util::opt_id(payload.get("dentistId").unwrap_or(&Value::Null)) } else { before["dentist_id"].as_i64() };
-        let follow_up: Option<String> = if payload.get("followUpDate").is_some() { payload.get("followUpDate").and_then(|v| v.as_str()).filter(|s| !s.is_empty()).map(|s| s.to_string()) } else { before["follow_up_date"].as_str().map(|s| s.to_string()) };
+        let follow_up: Option<String> = if payload.get("followUpDate").is_some() { payload.get("followUpDate").and_then(serde_json::Value::as_str).filter(|s| !s.is_empty()).map(ToString::to_string) } else { before["follow_up_date"].as_str().map(ToString::to_string) };
         conn.execute("UPDATE visits SET visit_date = ?1, dentist_id = ?2, complaint = ?3, history = ?4, examination = ?5, diagnosis = ?6, procedure_notes = ?7, advice = ?8, follow_up_date = ?9, referral_note = ?10, notes = ?11, updated_at = ?12 WHERE id = ?13",
             params![visit_date, dentist_id, g("complaint"), g("history"), g("examination"), g("diagnosis"), g("procedure_notes"), g("advice"), follow_up, g("referral_note"), g("notes"), util::now_local(), id])?;
         drop(conn);
@@ -127,10 +127,10 @@ pub fn chart_set(state: State<'_, AppState>, payload: Value) -> Result<Value, St
         state.gate("chart_set")?;
         let me = state.need("clinical.chart")?;
         let patient_id = util::req_int(payload.get("patientId").unwrap_or(&Value::Null), "patientId", 1, i64::MAX)?;
-        let teeth: Vec<String> = if let Some(arr) = payload.get("teeth").and_then(|v| v.as_array()) {
-            arr.iter().filter_map(|t| t.as_str().map(|s| s.to_string())).collect()
+        let teeth: Vec<String> = if let Some(arr) = payload.get("teeth").and_then(serde_json::Value::as_array) {
+            arr.iter().filter_map(|t| t.as_str().map(ToString::to_string)).collect()
         } else {
-            vec![payload.get("tooth").and_then(|v| v.as_str()).unwrap_or("").to_string()]
+            vec![payload.get("tooth").and_then(serde_json::Value::as_str).unwrap_or("").to_string()]
         };
         let condition = util::req_text(payload.get("condition").unwrap_or(&Value::Null), "condition", 32)?;
         for t in &teeth {
@@ -166,8 +166,8 @@ pub fn treatments_list(state: State<'_, AppState>, payload: Value) -> Result<Val
     (|| -> CmdResult<Value> {
         state.gate("treatments_list")?;
         let conn = state.conn.lock().unwrap();
-        let q = payload.get("search").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
-        let active_only = payload.get("activeOnly").and_then(|v| v.as_bool()).unwrap_or(true);
+        let q = payload.get("search").and_then(serde_json::Value::as_str).unwrap_or("").trim().to_string();
+        let active_only = payload.get("activeOnly").and_then(serde_json::Value::as_bool).unwrap_or(true);
         let mut sql = String::from("SELECT * FROM treatment_catalog");
         let mut conds: Vec<String> = Vec::new();
         let mut args: Vec<String> = Vec::new();
@@ -205,7 +205,7 @@ pub fn treatments_save(state: State<'_, AppState>, payload: Value) -> Result<Val
             if dup > 0 {
                 return Err(CmdError::new("DUPLICATE", "Treatment code already exists."));
             }
-            let active = if payload.get("active").and_then(|v| v.as_bool()).unwrap_or(true) { 1 } else { 0 };
+            let active = if payload.get("active").and_then(serde_json::Value::as_bool).unwrap_or(true) { 1 } else { 0 };
             conn.execute("UPDATE treatment_catalog SET code = ?1, name = ?2, category = ?3, default_price_paisa = ?4, duration_min = ?5, notes = ?6, active = ?7, updated_at = ?8 WHERE id = ?9",
                 params![code, name, category, price, duration, notes, active, util::now_local(), id])?;
             drop(conn);
@@ -254,7 +254,7 @@ pub fn medications_list(state: State<'_, AppState>, payload: Value) -> Result<Va
     (|| -> CmdResult<Value> {
         state.gate("medications_list")?;
         let conn = state.conn.lock().unwrap();
-        let q = payload.get("search").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+        let q = payload.get("search").and_then(serde_json::Value::as_str).unwrap_or("").trim().to_string();
         if q.is_empty() {
             util::query_all(&conn, "SELECT * FROM medication_catalog ORDER BY name", params!()).map(|v| json!(v))
         } else {
@@ -274,7 +274,7 @@ pub fn medications_save(state: State<'_, AppState>, payload: Value) -> Result<Va
         let conn = state.conn.lock().unwrap();
         let form = { let f = util::opt_text(payload.get("form").unwrap_or(&Value::Null), 48); if f.is_empty() { "Tablet".to_string() } else { f } };
         let g = |k: &str, m: usize| util::opt_text(payload.get(k).unwrap_or(&Value::Null), m);
-        let active = if payload.get("active").and_then(|v| v.as_bool()).unwrap_or(true) { 1 } else { 0 };
+        let active = if payload.get("active").and_then(serde_json::Value::as_bool).unwrap_or(true) { 1 } else { 0 };
         if let Some(id) = util::opt_id(payload.get("id").unwrap_or(&Value::Null)) {
             conn.execute("UPDATE medication_catalog SET name = ?1, generic_name = ?2, strength = ?3, form = ?4, route = ?5, default_dosage = ?6, default_duration = ?7, notes = ?8, active = ?9, updated_at = ?10 WHERE id = ?11",
                 params![name, g("generic_name", 160), g("strength", 64), form, g("route", 64), g("default_dosage", 120), g("default_duration", 120), g("notes", 2000), active, util::now_local(), id])?;
@@ -301,19 +301,19 @@ pub fn prescriptions_list(state: State<'_, AppState>, payload: Value) -> Result<
         let conn = state.conn.lock().unwrap();
         let mut conds: Vec<String> = Vec::new();
         let mut args: Vec<String> = Vec::new();
-        if let Some(p) = payload.get("patientId").and_then(|v| v.as_i64()) {
+        if let Some(p) = payload.get("patientId").and_then(serde_json::Value::as_i64) {
             if p > 0 { conds.push(format!("r.patient_id = {p}")); }
         }
-        if let Some(f) = payload.get("from").and_then(|v| v.as_str()) {
+        if let Some(f) = payload.get("from").and_then(serde_json::Value::as_str) {
             if !f.is_empty() { conds.push(format!("r.prescription_date >= ?{}", args.len() + 1)); args.push(f.to_string()); }
         }
-        if let Some(t) = payload.get("to").and_then(|v| v.as_str()) {
+        if let Some(t) = payload.get("to").and_then(serde_json::Value::as_str) {
             if !t.is_empty() { conds.push(format!("r.prescription_date <= ?{}", args.len() + 1)); args.push(t.to_string()); }
         }
-        if let Some(d) = payload.get("dentistId").and_then(|v| v.as_i64()) {
+        if let Some(d) = payload.get("dentistId").and_then(serde_json::Value::as_i64) {
             if d > 0 { conds.push(format!("r.dentist_id = {d}")); }
         }
-        if let Some(q) = payload.get("search").and_then(|v| v.as_str()) {
+        if let Some(q) = payload.get("search").and_then(serde_json::Value::as_str) {
             if !q.is_empty() {
                 conds.push(format!("(pt.name LIKE ?{} OR pt.code LIKE ?{})", args.len() + 1, args.len() + 1));
                 args.push(format!("%{q}%"));
@@ -340,7 +340,7 @@ pub fn prescriptions_get(state: State<'_, AppState>, payload: Value) -> Result<V
             .ok_or_else(|| CmdError::new("NOT_FOUND", "Prescription not found."))?;
         let items = util::query_all(&conn, "SELECT * FROM prescription_items WHERE prescription_id = ?1 ORDER BY sort_order, id", &[&id])?;
         let designations: Vec<String> = util::query_all(&conn, "SELECT designation FROM dentist_designations WHERE dentist_id = (SELECT dentist_id FROM prescriptions WHERE id = ?1) ORDER BY sort_order", &[&id])?
-            .iter().filter_map(|d| d["designation"].as_str().map(|s| s.to_string())).collect();
+            .iter().filter_map(|d| d["designation"].as_str().map(ToString::to_string)).collect();
         let mut out = rx.clone();
         out["items"] = json!(items);
         out["dentist_designations"] = json!(designations);
@@ -353,10 +353,10 @@ pub fn prescriptions_get(state: State<'_, AppState>, payload: Value) -> Result<V
 pub fn prescriptions_save(state: State<'_, AppState>, payload: Value) -> Result<Value, String> {
     (|| -> CmdResult<Value> {
         state.gate("prescriptions_save")?;
-        let is_update = payload.get("id").and_then(|v| v.as_i64()).unwrap_or(0) > 0;
+        let is_update = payload.get("id").and_then(serde_json::Value::as_i64).unwrap_or(0) > 0;
         let me = state.need(if is_update { "prescriptions.edit" } else { "prescriptions.create" })?;
         let patient_id = util::req_int(payload.get("patientId").unwrap_or(&Value::Null), "patientId", 1, i64::MAX)?;
-        let items = payload.get("items").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+        let items = payload.get("items").and_then(serde_json::Value::as_array).cloned().unwrap_or_default();
         if items.is_empty() {
             return Err(CmdError::new("VALIDATION", "At least one medication is required."));
         }
@@ -368,7 +368,7 @@ pub fn prescriptions_save(state: State<'_, AppState>, payload: Value) -> Result<
         let mut rid = 0i64;
         txn(&conn, || {
             if is_update {
-                rid = payload.get("id").and_then(|v| v.as_i64()).unwrap_or(0);
+                rid = payload.get("id").and_then(serde_json::Value::as_i64).unwrap_or(0);
                 let ex: i64 = conn.query_row("SELECT COUNT(*) FROM prescriptions WHERE id = ?1", [rid], |r| r.get(0))?;
                 if ex == 0 {
                     return Err(CmdError::new("NOT_FOUND", "Prescription not found."));
@@ -434,22 +434,22 @@ pub fn appointments_list(state: State<'_, AppState>, payload: Value) -> Result<V
         let conn = state.conn.lock().unwrap();
         let mut conds: Vec<String> = Vec::new();
         let mut args: Vec<String> = Vec::new();
-        if let Some(f) = payload.get("from").and_then(|v| v.as_str()) {
+        if let Some(f) = payload.get("from").and_then(serde_json::Value::as_str) {
             if !f.is_empty() { conds.push(format!("a.appt_date >= ?{}", args.len() + 1)); args.push(f.to_string()); }
         }
-        if let Some(t) = payload.get("to").and_then(|v| v.as_str()) {
+        if let Some(t) = payload.get("to").and_then(serde_json::Value::as_str) {
             if !t.is_empty() { conds.push(format!("a.appt_date <= ?{}", args.len() + 1)); args.push(t.to_string()); }
         }
-        if let Some(d) = payload.get("dentistId").and_then(|v| v.as_i64()) {
+        if let Some(d) = payload.get("dentistId").and_then(serde_json::Value::as_i64) {
             if d > 0 { conds.push(format!("a.dentist_id = {d}")); }
         }
-        if let Some(s) = payload.get("status").and_then(|v| v.as_str()) {
+        if let Some(s) = payload.get("status").and_then(serde_json::Value::as_str) {
             if !s.is_empty() { conds.push(format!("a.status = ?{}", args.len() + 1)); args.push(s.to_string()); }
         }
-        if let Some(p) = payload.get("patientId").and_then(|v| v.as_i64()) {
+        if let Some(p) = payload.get("patientId").and_then(serde_json::Value::as_i64) {
             if p > 0 { conds.push(format!("a.patient_id = {p}")); }
         }
-        if let Some(q) = payload.get("search").and_then(|v| v.as_str()) {
+        if let Some(q) = payload.get("search").and_then(serde_json::Value::as_str) {
             if !q.is_empty() {
                 conds.push(format!("(pt.name LIKE ?{} OR pt.code LIKE ?{} OR pt.phone LIKE ?{})", args.len() + 1, args.len() + 1, args.len() + 1));
                 args.push(format!("%{q}%"));
@@ -476,7 +476,7 @@ pub fn appointments_save(state: State<'_, AppState>, payload: Value) -> Result<V
         if !time_ok {
             return Err(CmdError::new("VALIDATION", "Appointment time is invalid."));
         }
-        let status = payload.get("status").and_then(|v| v.as_str()).unwrap_or("Scheduled");
+        let status = payload.get("status").and_then(serde_json::Value::as_str).unwrap_or("Scheduled");
         if !APPT_STATUSES.contains(&status) {
             return Err(CmdError::new("VALIDATION", "Invalid appointment status."));
         }
@@ -530,7 +530,7 @@ pub fn queue_list(state: State<'_, AppState>, payload: Value) -> Result<Value, S
     (|| -> CmdResult<Value> {
         state.gate("queue_list")?;
         state.need("queue.manage")?;
-        let date = payload.get("date").and_then(|v| v.as_str()).unwrap_or("");
+        let date = payload.get("date").and_then(serde_json::Value::as_str).unwrap_or("");
         let date = if date.is_empty() { util::today() } else { date.to_string() };
         let conn = state.conn.lock().unwrap();
         util::query_all(&conn, "SELECT q.*, pt.name AS patient_name, pt.code AS patient_code, d.name AS dentist_name
@@ -545,7 +545,7 @@ pub fn queue_add(state: State<'_, AppState>, payload: Value) -> Result<Value, St
     (|| -> CmdResult<Value> {
         state.gate("queue_add")?;
         state.need("queue.manage")?;
-        let date = payload.get("date").and_then(|v| v.as_str()).unwrap_or("");
+        let date = payload.get("date").and_then(serde_json::Value::as_str).unwrap_or("");
         let date = if date.is_empty() { util::today() } else { date.to_string() };
         let patient_id = util::req_int(payload.get("patientId").unwrap_or(&Value::Null), "patientId", 1, i64::MAX)?;
         let conn = state.conn.lock().unwrap();
@@ -555,7 +555,7 @@ pub fn queue_add(state: State<'_, AppState>, payload: Value) -> Result<Value, St
             return Err(CmdError::new("DUPLICATE", "Patient is already in the queue for this date."));
         }
         let max_no: i64 = conn.query_row("SELECT COALESCE(MAX(queue_no), 0) FROM queue_entries WHERE queue_date = ?1", [&date], |r| r.get(0)).unwrap_or(0);
-        let priority = payload.get("priority").and_then(|v| v.as_str()).unwrap_or("normal");
+        let priority = payload.get("priority").and_then(serde_json::Value::as_str).unwrap_or("normal");
         let priority = if ["normal", "urgent", "vip"].contains(&priority) { priority } else { "normal" };
         let appt_id = util::opt_id(payload.get("appointmentId").unwrap_or(&Value::Null));
         conn.execute("INSERT INTO queue_entries (appointment_id, patient_id, dentist_id, queue_no, queue_date, arrival_time, priority, status, notes, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'waiting', ?8, ?9, ?9)",
@@ -578,7 +578,7 @@ pub fn queue_action(state: State<'_, AppState>, payload: Value) -> Result<Value,
         state.gate("queue_action")?;
         state.need("queue.manage")?;
         let id = util::req_int(payload.get("id").unwrap_or(&Value::Null), "id", 1, i64::MAX)?;
-        let action = payload.get("action").and_then(|v| v.as_str()).unwrap_or("");
+        let action = payload.get("action").and_then(serde_json::Value::as_str).unwrap_or("");
         let next = match action {
             "call" => "called",
             "start" => "in_progress",
