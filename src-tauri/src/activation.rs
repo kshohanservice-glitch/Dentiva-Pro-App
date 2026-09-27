@@ -43,7 +43,7 @@ fn timing_safe_equal(a: &str, b: &str) -> bool {
 /// Returns true only when `code` derives to the embedded verifier.
 pub fn verify_activation_code(code: &str) -> bool {
     let candidate = code.trim();
-    if candidate.len() < 8 || candidate.len() > 32 || !candidate.bytes().all(u8::is_ascii_digit) {
+    if candidate.len() < 8 || candidate.len() > 32 || !candidate.bytes().all(|b| b.is_ascii_digit()) {
         return false;
     }
     let digest = sha256_hex(&format!("{DOMAIN}{candidate}"));

@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 use crate::error::{CmdError, CmdResult};
 
-pub const SCHEMA_SQL: &str = include_str!("../../../db/schema.sql");
+pub const SCHEMA_SQL: &str = include_str!("../../db/schema.sql");
 pub const SCHEMA_VERSION: i64 = 1;
 pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
