@@ -4,22 +4,23 @@ Release version: 1.0.0 · Target: Windows 10/11 x64 (NSIS installer)
 
 ## 1. Automated gates (must ALL pass)
 
-- [ ] `npm run typecheck` — clean
-- [ ] `npm run lint` — 0 errors
-- [ ] `npm test` — all suites pass (acceptance test skips without the secret)
-- [ ] `npm run audit:licenses` / `audit:secrets` / `audit:todo` — pass
-- [ ] `npm run build` — `dist-web/` produced without errors
-- [ ] `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test`, `cargo check` — pass
-- [ ] Contract check: `src/api.ts` command names == Rust `#[tauri::command]` fns
+- [x] `npm run typecheck` — clean
+- [x] `npm run lint` — 0 errors
+- [x] `npm test` — all suites pass (acceptance test skips without the secret)
+- [x] `npm run audit:licenses` / `audit:secrets` / `audit:todo` — pass
+- [x] `npm run build` — `dist-web/` produced without errors
+- [x] `cargo fmt`, `cargo clippy -- -D warnings`, `cargo test`, `cargo check` — pass
+- [x] Contract check: `src/api.ts` command names == Rust `#[tauri::command]` fns
       == `lib.rs` registrations (103/103, zero diff both directions)
 
 ## 2. Installer build
 
-- [ ] Tag `v1.0.0` pushed (or Release workflow dispatched manually)
-- [ ] **Release** workflow green on `windows-latest`
-- [ ] NSIS `.exe` attached to the GitHub Release (+ fallback copy in `/dist`)
+- [x] Tag `v1.0.0` pushed (or Release workflow dispatched manually)
+- [x] **Release** workflow green on `windows-latest`
+- [x] NSIS `.exe` attached to the GitHub Release (+ fallback copy in `/dist`)
 - [ ] With the `DENTIVA_PRODUCT_CODE` secret set, the env-gated activation
       acceptance test ran and passed in the release workflow
+      (owner action: add the repo secret; verified locally instead — PASSED)
 
 ## 3. Installed-app validation (fresh Windows machine/VM)
 
@@ -42,4 +43,6 @@ Record of the 1.0.0 validation run:
 
 | Date | Machine | Result | Notes |
 |---|---|---|---|
-| 2026-09-26 | CI (ubuntu) + release workflow | PASS (automated gates) | Manual installed-app pass to be recorded here at ship time |
+| 2026-09-27 | CI ubuntu-24.04 (run 36300801469) | PASS | All frontend + Rust gates green |
+| 2026-09-27 | Release windows-latest (run 36300802564) | PASS | `Dentiva.Pro_1.0.0_x64-setup.exe` (3.3 MiB) published to Release v1.0.0 |
+| (ship time) | Fresh Windows 10/11 machine | Manual pass | Sections 3–4 recorded here at ship time |

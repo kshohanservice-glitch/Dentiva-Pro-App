@@ -31,7 +31,10 @@
   `cargo clippy -- -D warnings`, `cargo test`, `cargo check` all pass.
   Fixed along the way: date-independent integration tests, redundant-closure
   clippy hardening, `include_str!` schema path, rustfmt conformance (via CI bot).
-- Release workflow (windows-latest NSIS build) triggered by tag `v1.0.0`.
+- Release workflow (windows-latest NSIS build) GREEN on tag `v1.0.0`
+  (run 36300802564): `Dentiva.Pro_1.0.0_x64-setup.exe` (3.3 MiB) published to
+  the GitHub Release. Windows-only fixes along the way: `fileURLToPath` in
+  audit scripts, drive-letter-safe sql.js wasm path, release-asset publishing.
 
 ## Release readiness
 
