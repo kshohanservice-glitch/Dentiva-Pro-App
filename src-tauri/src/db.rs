@@ -34,7 +34,8 @@ pub fn open_connection(db_path: &std::path::Path) -> CmdResult<Connection> {
     if let Some(parent) = db_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let conn = Connection::open(db_path).map_err(|e| CmdError::new("DB", format!("Could not open database: {e}")))?;
+    let conn = Connection::open(db_path)
+        .map_err(|e| CmdError::new("DB", format!("Could not open database: {e}")))?;
     conn.pragma_update(None, "journal_mode", "WAL")
         .map_err(|e| CmdError::new("DB", format!("Could not enable WAL mode: {e}")))?;
     conn.pragma_update(None, "foreign_keys", "ON")
@@ -75,10 +76,22 @@ pub fn permission_catalog() -> Vec<(&'static str, &'static str, &'static str)> {
         ("clinical.delete_visit", "Delete visits", "Clinical"),
         ("clinical.chart", "Manage dental chart", "Clinical"),
         ("clinical.referral", "Manage referrals", "Clinical"),
-        ("treatments.manage", "Manage treatment catalog", "Treatments"),
-        ("prescriptions.create", "Create prescriptions", "Prescriptions"),
+        (
+            "treatments.manage",
+            "Manage treatment catalog",
+            "Treatments",
+        ),
+        (
+            "prescriptions.create",
+            "Create prescriptions",
+            "Prescriptions",
+        ),
         ("prescriptions.edit", "Edit prescriptions", "Prescriptions"),
-        ("prescriptions.print", "Print prescriptions", "Prescriptions"),
+        (
+            "prescriptions.print",
+            "Print prescriptions",
+            "Prescriptions",
+        ),
         ("appointments.view", "View appointments", "Appointments"),
         ("appointments.manage", "Manage appointments", "Appointments"),
         ("queue.manage", "Manage queue", "Queue"),
@@ -97,40 +110,85 @@ pub fn permission_catalog() -> Vec<(&'static str, &'static str, &'static str)> {
         ("staff.view", "View staff", "Staff"),
         ("staff.manage", "Manage staff", "Staff"),
         ("users.manage", "Manage users", "Administration"),
-        ("roles.manage", "Manage roles & permissions", "Administration"),
+        (
+            "roles.manage",
+            "Manage roles & permissions",
+            "Administration",
+        ),
         ("settings.manage", "Manage settings", "Administration"),
-        ("printers.manage", "Manage printer profiles", "Administration"),
+        (
+            "printers.manage",
+            "Manage printer profiles",
+            "Administration",
+        ),
         ("backup.run", "Run backups", "Administration"),
         ("backup.restore", "Restore backups", "Administration"),
         ("audit.view", "View audit log", "Administration"),
         ("reports.view", "View reports", "Reports"),
         ("reports.financial", "View financial reports", "Reports"),
-        ("data.danger", "Destructive data operations", "Administration"),
+        (
+            "data.danger",
+            "Destructive data operations",
+            "Administration",
+        ),
     ]
 }
 
 fn default_grants(role: &str) -> Vec<&'static str> {
     match role {
-        "Administrator" => permission_catalog().into_iter().map(|(c, _, _)| c).filter(|c| *c != "data.danger").collect(),
+        "Administrator" => permission_catalog()
+            .into_iter()
+            .map(|(c, _, _)| c)
+            .filter(|c| *c != "data.danger")
+            .collect(),
         "Dentist" => vec![
-            "patients.view", "patients.create", "patients.edit", "patients.attachments",
-            "clinical.view", "clinical.create_visit", "clinical.edit_visit", "clinical.chart",
-            "clinical.referral", "treatments.manage",
-            "prescriptions.create", "prescriptions.edit", "prescriptions.print",
-            "appointments.view", "reports.view",
+            "patients.view",
+            "patients.create",
+            "patients.edit",
+            "patients.attachments",
+            "clinical.view",
+            "clinical.create_visit",
+            "clinical.edit_visit",
+            "clinical.chart",
+            "clinical.referral",
+            "treatments.manage",
+            "prescriptions.create",
+            "prescriptions.edit",
+            "prescriptions.print",
+            "appointments.view",
+            "reports.view",
         ],
         "Receptionist" => vec![
-            "patients.view", "patients.create", "patients.edit", "patients.attachments",
-            "appointments.view", "appointments.manage", "queue.manage", "reports.view",
+            "patients.view",
+            "patients.create",
+            "patients.edit",
+            "patients.attachments",
+            "appointments.view",
+            "appointments.manage",
+            "queue.manage",
+            "reports.view",
         ],
         "Assistant" => vec![
-            "patients.view", "clinical.view", "clinical.create_visit", "clinical.chart",
-            "appointments.view", "queue.manage",
+            "patients.view",
+            "clinical.view",
+            "clinical.create_visit",
+            "clinical.chart",
+            "appointments.view",
+            "queue.manage",
         ],
         "Accountant" => vec![
-            "patients.view", "invoices.view", "invoices.create", "invoices.edit", "invoices.print",
-            "payments.view", "payments.record", "accounting.view", "accounting.manage",
-            "reports.view", "reports.financial", "audit.view",
+            "patients.view",
+            "invoices.view",
+            "invoices.create",
+            "invoices.edit",
+            "invoices.print",
+            "payments.view",
+            "payments.record",
+            "accounting.view",
+            "accounting.manage",
+            "reports.view",
+            "reports.financial",
+            "audit.view",
         ],
         "Inventory Manager" => vec!["inventory.view", "inventory.manage", "reports.view"],
         _ => vec![],
@@ -143,24 +201,44 @@ fn seed_fresh(conn: &Connection) -> CmdResult<()> {
         "INSERT INTO meta (key, value) VALUES ('schema_version', ?1), ('app_version', ?2), ('activated', '0'), ('setup_complete', '0')",
         params![SCHEMA_VERSION.to_string(), APP_VERSION],
     )?;
-    conn.execute("INSERT INTO clinic (id, name, created_at, updated_at) VALUES (1, 'Dental Care', ?1, ?1)", params![now])?;
+    conn.execute(
+        "INSERT INTO clinic (id, name, created_at, updated_at) VALUES (1, 'Dental Care', ?1, ?1)",
+        params![now],
+    )?;
     conn.execute("INSERT INTO app_lock_state (id, locked) VALUES (1, 0)", ())?;
     for (code, name, module) in permission_catalog() {
-        conn.execute("INSERT INTO permissions (code, name, module) VALUES (?1, ?2, ?3)", params![code, name, module])?;
+        conn.execute(
+            "INSERT INTO permissions (code, name, module) VALUES (?1, ?2, ?3)",
+            params![code, name, module],
+        )?;
     }
-    for role in ["Owner", "Administrator", "Dentist", "Receptionist", "Assistant", "Accountant", "Inventory Manager"] {
+    for role in [
+        "Owner",
+        "Administrator",
+        "Dentist",
+        "Receptionist",
+        "Assistant",
+        "Accountant",
+        "Inventory Manager",
+    ] {
         conn.execute(
             "INSERT INTO roles (name, description, system_role, created_at, updated_at) VALUES (?1, ?2, 1, ?3, ?3)",
             params![role, format!("Built-in {role} role"), now],
         )?;
         let role_id = conn.last_insert_rowid();
         let grants: Vec<&str> = if role == "Owner" {
-            permission_catalog().into_iter().map(|(c, _, _)| c).collect()
+            permission_catalog()
+                .into_iter()
+                .map(|(c, _, _)| c)
+                .collect()
         } else {
             default_grants(role)
         };
         for g in grants {
-            conn.execute("INSERT OR IGNORE INTO role_permissions (role_id, permission_code) VALUES (?1, ?2)", params![role_id, g])?;
+            conn.execute(
+                "INSERT OR IGNORE INTO role_permissions (role_id, permission_code) VALUES (?1, ?2)",
+                params![role_id, g],
+            )?;
         }
     }
     let teeth = [
@@ -179,7 +257,10 @@ fn seed_fresh(conn: &Connection) -> CmdResult<()> {
         ("watch", "Watch / review", "#8b5cf6", 12),
     ];
     for (code, name, color, sort) in teeth {
-        conn.execute("INSERT INTO tooth_condition_types (code, name, color, sort) VALUES (?1, ?2, ?3, ?4)", params![code, name, color, sort])?;
+        conn.execute(
+            "INSERT INTO tooth_condition_types (code, name, color, sort) VALUES (?1, ?2, ?3, ?4)",
+            params![code, name, color, sort],
+        )?;
     }
     let cats = [
         ("income", "Consultation", "Consultation fees"),
@@ -224,15 +305,66 @@ fn seed_fresh(conn: &Connection) -> CmdResult<()> {
         ("clinic_message_default", "Take care of your smile. Follow the prescribed advice and visit for follow-up as advised."),
     ];
     for (k, v) in settings {
-        conn.execute("INSERT INTO app_settings (key, value, updated_at) VALUES (?1, ?2, ?3)", params![k, v, now])?;
+        conn.execute(
+            "INSERT INTO app_settings (key, value, updated_at) VALUES (?1, ?2, ?3)",
+            params![k, v, now],
+        )?;
     }
     let profiles = [
-        ("Prescription — A4", "prescription", "A4", "12,12,14,12", "portrait", 1.0, 1),
-        ("Prescription — A5", "prescription", "A5", "10,10,12,10", "portrait", 0.92, 0),
-        ("Invoice — A5", "invoice", "A5", "10,10,10,10", "portrait", 1.0, 1),
-        ("Invoice — Thermal 80mm", "invoice", "THERMAL_80", "4,4,4,4", "portrait", 0.95, 0),
-        ("Patient Summary — A4", "summary", "A4", "12,12,14,12", "portrait", 1.0, 1),
-        ("Report — A4", "report", "A4", "12,12,14,12", "portrait", 1.0, 1),
+        (
+            "Prescription — A4",
+            "prescription",
+            "A4",
+            "12,12,14,12",
+            "portrait",
+            1.0,
+            1,
+        ),
+        (
+            "Prescription — A5",
+            "prescription",
+            "A5",
+            "10,10,12,10",
+            "portrait",
+            0.92,
+            0,
+        ),
+        (
+            "Invoice — A5",
+            "invoice",
+            "A5",
+            "10,10,10,10",
+            "portrait",
+            1.0,
+            1,
+        ),
+        (
+            "Invoice — Thermal 80mm",
+            "invoice",
+            "THERMAL_80",
+            "4,4,4,4",
+            "portrait",
+            0.95,
+            0,
+        ),
+        (
+            "Patient Summary — A4",
+            "summary",
+            "A4",
+            "12,12,14,12",
+            "portrait",
+            1.0,
+            1,
+        ),
+        (
+            "Report — A4",
+            "report",
+            "A4",
+            "12,12,14,12",
+            "portrait",
+            1.0,
+            1,
+        ),
     ];
     // NOTE: names/margins/scales above must stay identical to DEFAULT_PRINTER_PROFILES.
     for (name, doc, paper, margins, orient, scale, def) in profiles {

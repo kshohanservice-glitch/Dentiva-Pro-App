@@ -9,7 +9,10 @@ pub struct CmdError {
 
 impl CmdError {
     pub fn new(code: &'static str, message: impl Into<String>) -> Self {
-        Self { code, message: message.into() }
+        Self {
+            code,
+            message: message.into(),
+        }
     }
 }
 
@@ -34,7 +37,10 @@ impl From<rusqlite::Error> for CmdError {
             return Self::new("DUPLICATE", "This record already exists (duplicate value).");
         }
         if msg.contains("FOREIGN KEY constraint failed") {
-            return Self::new("FK_VIOLATION", "This operation would break linked records and was refused.");
+            return Self::new(
+                "FK_VIOLATION",
+                "This operation would break linked records and was refused.",
+            );
         }
         Self::new("DB", format!("Database error: {msg}"))
     }

@@ -13,7 +13,10 @@ fn err(e: CmdError) -> String {
 }
 
 fn valid_username(u: &str) -> bool {
-    u.len() >= 3 && u.len() <= 32 && u.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-')
+    u.len() >= 3
+        && u.len() <= 32
+        && u.chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-')
 }
 
 // ------------------------------------------------------------ staff
@@ -86,7 +89,14 @@ pub fn staff_delete(state: State<'_, AppState>, payload: Value) -> Result<Value,
         let conn = state.conn.lock().unwrap();
         conn.execute("DELETE FROM staff WHERE id = ?1", [id])?;
         drop(conn);
-        state.audit("staff.deleted", "staff", Some(id), &format!("Staff #{id} deleted"), None, None);
+        state.audit(
+            "staff.deleted",
+            "staff",
+            Some(id),
+            &format!("Staff #{id} deleted"),
+            None,
+            None,
+        );
         Ok(json!({ "id": id }))
     })()
     .map_err(err)
@@ -271,15 +281,32 @@ pub fn roles_delete(state: State<'_, AppState>, payload: Value) -> Result<Value,
         let r = util::query_one(&conn, "SELECT * FROM roles WHERE id = ?1", &[&id])?
             .ok_or_else(|| CmdError::new("NOT_FOUND", "Role not found."))?;
         if r["system_role"].as_i64().unwrap_or(0) != 0 {
-            return Err(CmdError::new("VALIDATION", "System roles cannot be deleted."));
+            return Err(CmdError::new(
+                "VALIDATION",
+                "System roles cannot be deleted.",
+            ));
         }
-        let users: i64 = conn.query_row("SELECT COUNT(*) FROM users WHERE role_id = ?1", [id], |r| r.get(0)).unwrap_or(0);
+        let users: i64 = conn
+            .query_row("SELECT COUNT(*) FROM users WHERE role_id = ?1", [id], |r| {
+                r.get(0)
+            })
+            .unwrap_or(0);
         if users > 0 {
-            return Err(CmdError::new("HAS_USERS", format!("Role is assigned to {users} user(s). Reassign them first.")));
+            return Err(CmdError::new(
+                "HAS_USERS",
+                format!("Role is assigned to {users} user(s). Reassign them first."),
+            ));
         }
         conn.execute("DELETE FROM roles WHERE id = ?1", [id])?;
         drop(conn);
-        state.audit("role.deleted", "role", Some(id), &format!("Role {} deleted", r["name"].as_str().unwrap_or("")), Some(r.to_string()), None);
+        state.audit(
+            "role.deleted",
+            "role",
+            Some(id),
+            &format!("Role {} deleted", r["name"].as_str().unwrap_or("")),
+            Some(r.to_string()),
+            None,
+        );
         Ok(json!({ "id": id }))
     })()
     .map_err(err)
@@ -383,17 +410,43 @@ pub fn dentists_delete(state: State<'_, AppState>, payload: Value) -> Result<Val
         state.need("settings.manage")?;
         let id = util::req_int(payload.get("id").unwrap_or(&Value::Null), "id", 1, i64::MAX)?;
         let conn = state.conn.lock().unwrap();
-        let refs: i64 = conn.query_row("SELECT COUNT(*) FROM appointments WHERE dentist_id = ?1", [id], |r| r.get(0)).unwrap_or(0)
-            + conn.query_row("SELECT COUNT(*) FROM visits WHERE dentist_id = ?1", [id], |r| r.get(0)).unwrap_or(0);
+        let refs: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM appointments WHERE dentist_id = ?1",
+                [id],
+                |r| r.get(0),
+            )
+            .unwrap_or(0)
+            + conn
+                .query_row(
+                    "SELECT COUNT(*) FROM visits WHERE dentist_id = ?1",
+                    [id],
+                    |r| r.get(0),
+                )
+                .unwrap_or(0);
         if refs > 0 {
             conn.execute("UPDATE dentists SET active = 0 WHERE id = ?1", [id])?;
             drop(conn);
-            state.audit("dentist.deactivated", "dentist", Some(id), &format!("Dentist #{id} deactivated ({refs} linked records preserved)"), None, None);
+            state.audit(
+                "dentist.deactivated",
+                "dentist",
+                Some(id),
+                &format!("Dentist #{id} deactivated ({refs} linked records preserved)"),
+                None,
+                None,
+            );
             return Ok(json!({ "id": id, "deactivated": true }));
         }
         conn.execute("DELETE FROM dentists WHERE id = ?1", [id])?;
         drop(conn);
-        state.audit("dentist.deleted", "dentist", Some(id), &format!("Dentist #{id} deleted"), None, None);
+        state.audit(
+            "dentist.deleted",
+            "dentist",
+            Some(id),
+            &format!("Dentist #{id} deleted"),
+            None,
+            None,
+        );
         Ok(json!({ "id": id }))
     })()
     .map_err(err)
@@ -405,7 +458,12 @@ pub fn printer_profiles_list(state: State<'_, AppState>) -> Result<Value, String
     (|| -> CmdResult<Value> {
         state.gate("printer_profiles_list")?;
         let conn = state.conn.lock().unwrap();
-        util::query_all(&conn, "SELECT * FROM printer_profiles ORDER BY document_type, name", params!()).map(|v| json!(v))
+        util::query_all(
+            &conn,
+            "SELECT * FROM printer_profiles ORDER BY document_type, name",
+            params!(),
+        )
+        .map(|v| json!(v))
     })()
     .map_err(err)
 }

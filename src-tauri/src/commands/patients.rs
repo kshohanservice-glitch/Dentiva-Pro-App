@@ -15,32 +15,70 @@ fn err(e: CmdError) -> String {
 fn txn(conn: &rusqlite::Connection, f: impl FnOnce() -> CmdResult<()>) -> CmdResult<()> {
     conn.execute_batch("BEGIN IMMEDIATE")?;
     match f() {
-        Ok(()) => { conn.execute_batch("COMMIT")?; Ok(()) }
-        Err(e) => { let _ = conn.execute_batch("ROLLBACK"); Err(e) }
+        Ok(()) => {
+            conn.execute_batch("COMMIT")?;
+            Ok(())
+        }
+        Err(e) => {
+            let _ = conn.execute_batch("ROLLBACK");
+            Err(e)
+        }
     }
 }
 
-fn next_code(conn: &rusqlite::Connection, prefix_key: &str, next_key: &str, pad_key: &str) -> String {
+fn next_code(
+    conn: &rusqlite::Connection,
+    prefix_key: &str,
+    next_key: &str,
+    pad_key: &str,
+) -> String {
     let prefix = util::setting(conn, prefix_key, "");
-    let next: i64 = util::setting(conn, next_key, "1").parse().unwrap_or(1).max(1);
-    let pad: usize = util::setting(conn, pad_key, "5").parse().unwrap_or(5).max(1) as usize;
+    let next: i64 = util::setting(conn, next_key, "1")
+        .parse()
+        .unwrap_or(1)
+        .max(1);
+    let pad: usize = util::setting(conn, pad_key, "5")
+        .parse()
+        .unwrap_or(5)
+        .max(1) as usize;
     let code = format!("{prefix}{:0>pad$}", next, pad = pad);
-    let _ = conn.execute("UPDATE app_settings SET value = ?1 WHERE key = ?2", params![(next + 1).to_string(), next_key]);
+    let _ = conn.execute(
+        "UPDATE app_settings SET value = ?1 WHERE key = ?2",
+        params![(next + 1).to_string(), next_key],
+    );
     code
 }
 
 fn add_days(iso: &str, d: i64) -> String {
     chrono::NaiveDate::parse_from_str(iso, "%Y-%m-%d")
-        .map(|dt| (dt + chrono::Duration::days(d)).format("%Y-%m-%d").to_string())
+        .map(|dt| {
+            (dt + chrono::Duration::days(d))
+                .format("%Y-%m-%d")
+                .to_string()
+        })
         .unwrap_or_else(|_| iso.to_string())
 }
 
 fn financial_view(state: &AppState) -> bool {
-    state.optional_session().map(|s| s.permissions.iter().any(|p| p == "*" || p == "invoices.view" || p == "payments.view")).unwrap_or(false)
+    state
+        .optional_session()
+        .map(|s| {
+            s.permissions
+                .iter()
+                .any(|p| p == "*" || p == "invoices.view" || p == "payments.view")
+        })
+        .unwrap_or(false)
 }
 
 fn clinical_view(state: &AppState) -> bool {
-    state.optional_session().map(|s| s.permissions.iter().any(|p| p == "*" || p == "clinical.view")).unwrap_or(false)
+    state
+        .optional_session()
+        .map(|s| {
+            s.permissions
+                .iter()
+                .any(|p| p == "*" || p == "clinical.view")
+        })
+        .unwrap_or(false)
 }
 
 fn fnv1a(s: &str) -> String {
@@ -146,22 +184,45 @@ pub fn patients_get(state: State<'_, AppState>, payload: Value) -> Result<Value,
 }
 
 // ------------------------------------------------------------ create/update
-fn duplicate_warnings(conn: &rusqlite::Connection, name: &str, phone: &str, dob: &str) -> Vec<String> {
+fn duplicate_warnings(
+    conn: &rusqlite::Connection,
+    name: &str,
+    phone: &str,
+    dob: &str,
+) -> Vec<String> {
     let mut warns = Vec::new();
     if !phone.is_empty() {
-        let c: i64 = conn.query_row("SELECT COUNT(*) FROM patients WHERE phone = ?1 OR emergency_phone = ?1", [phone], |r| r.get(0)).unwrap_or(0);
+        let c: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM patients WHERE phone = ?1 OR emergency_phone = ?1",
+                [phone],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
         if c > 0 {
             warns.push(format!("{c} existing patient(s) share this phone number."));
         }
     }
     if !name.is_empty() {
-        let c: i64 = conn.query_row("SELECT COUNT(*) FROM patients WHERE LOWER(name) = LOWER(?1)", [name.trim()], |r| r.get(0)).unwrap_or(0);
+        let c: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM patients WHERE LOWER(name) = LOWER(?1)",
+                [name.trim()],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
         if c > 0 {
             warns.push(format!("{c} existing patient(s) have the same name."));
         }
     }
     if !dob.is_empty() {
-        let c: i64 = conn.query_row("SELECT COUNT(*) FROM patients WHERE dob = ?1 AND LOWER(name) = LOWER(?2)", params![dob, name.trim()], |r| r.get(0)).unwrap_or(0);
+        let c: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM patients WHERE dob = ?1 AND LOWER(name) = LOWER(?2)",
+                params![dob, name.trim()],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
         if c > 0 {
             warns.push("An existing patient has the same name and date of birth.".to_string());
         }
@@ -317,10 +378,23 @@ pub fn patients_merge(state: State<'_, AppState>, payload: Value) -> Result<Valu
     (|| -> CmdResult<Value> {
         state.gate("patients_merge")?;
         state.need("patients.merge")?;
-        let master = util::req_int(payload.get("masterId").unwrap_or(&Value::Null), "masterId", 1, i64::MAX)?;
-        let dup = util::req_int(payload.get("duplicateId").unwrap_or(&Value::Null), "duplicateId", 1, i64::MAX)?;
+        let master = util::req_int(
+            payload.get("masterId").unwrap_or(&Value::Null),
+            "masterId",
+            1,
+            i64::MAX,
+        )?;
+        let dup = util::req_int(
+            payload.get("duplicateId").unwrap_or(&Value::Null),
+            "duplicateId",
+            1,
+            i64::MAX,
+        )?;
         if master == dup {
-            return Err(CmdError::new("VALIDATION", "Master and duplicate must differ."));
+            return Err(CmdError::new(
+                "VALIDATION",
+                "Master and duplicate must differ.",
+            ));
         }
         let conn = state.conn.lock().unwrap();
         let m = util::query_one(&conn, "SELECT * FROM patients WHERE id = ?1", &[&master])?;
@@ -329,16 +403,38 @@ pub fn patients_merge(state: State<'_, AppState>, payload: Value) -> Result<Valu
             return Err(CmdError::new("NOT_FOUND", "Patient not found."));
         }
         txn(&conn, || {
-            for t in ["visits", "treatment_records", "prescriptions", "appointments", "queue_entries", "invoices", "payments",
-                "patient_attachments", "patient_referrals", "patient_medical_notes", "patient_tags", "patient_extra_contacts", "dental_chart_records"] {
-                conn.execute(&format!("UPDATE {t} SET patient_id = ?1 WHERE patient_id = ?2"), params![master, dup])?;
+            for t in [
+                "visits",
+                "treatment_records",
+                "prescriptions",
+                "appointments",
+                "queue_entries",
+                "invoices",
+                "payments",
+                "patient_attachments",
+                "patient_referrals",
+                "patient_medical_notes",
+                "patient_tags",
+                "patient_extra_contacts",
+                "dental_chart_records",
+            ] {
+                conn.execute(
+                    &format!("UPDATE {t} SET patient_id = ?1 WHERE patient_id = ?2"),
+                    params![master, dup],
+                )?;
             }
             conn.execute("DELETE FROM patients WHERE id = ?1", [dup])?;
             Ok(())
         })?;
         drop(conn);
-        state.audit("patient.merged", "patient", Some(master), &format!("Patient #{dup} merged into #{master}"),
-            Some(json!({"dupId": dup}).to_string()), Some(json!({"masterId": master}).to_string()));
+        state.audit(
+            "patient.merged",
+            "patient",
+            Some(master),
+            &format!("Patient #{dup} merged into #{master}"),
+            Some(json!({"dupId": dup}).to_string()),
+            Some(json!({"masterId": master}).to_string()),
+        );
         Ok(json!({ "masterId": master }))
     })()
     .map_err(err)
@@ -466,8 +562,18 @@ pub fn mednotes_create(state: State<'_, AppState>, payload: Value) -> Result<Val
 }
 
 // ------------------------------------------------------------ attachments
-const ALLOWED_MIME: [&str; 10] = ["image/jpeg", "image/png", "image/webp", "image/gif", "image/bmp", "application/pdf",
-    "image/tiff", "text/plain", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"];
+const ALLOWED_MIME: [&str; 10] = [
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/gif",
+    "image/bmp",
+    "application/pdf",
+    "image/tiff",
+    "text/plain",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+];
 
 #[tauri::command]
 pub fn attachments_list(state: State<'_, AppState>, payload: Value) -> Result<Value, String> {
@@ -549,12 +655,32 @@ pub fn attachment_delete(state: State<'_, AppState>, payload: Value) -> Result<V
         state.need("patients.attachments")?;
         let id = util::req_int(payload.get("id").unwrap_or(&Value::Null), "id", 1, i64::MAX)?;
         let conn = state.conn.lock().unwrap();
-        let att = util::query_one(&conn, "SELECT * FROM patient_attachments WHERE id = ?1", &[&id])?
-            .ok_or_else(|| CmdError::new("NOT_FOUND", "Attachment not found."))?;
+        let att = util::query_one(
+            &conn,
+            "SELECT * FROM patient_attachments WHERE id = ?1",
+            &[&id],
+        )?
+        .ok_or_else(|| CmdError::new("NOT_FOUND", "Attachment not found."))?;
         conn.execute("DELETE FROM patient_attachments WHERE id = ?1", [id])?;
-        let _ = std::fs::remove_file(state.paths.attachments_dir.join(format!("p{}", att["patient_id"].as_i64().unwrap_or(0))).join(att["stored_name"].as_str().unwrap_or("")));
+        let _ = std::fs::remove_file(
+            state
+                .paths
+                .attachments_dir
+                .join(format!("p{}", att["patient_id"].as_i64().unwrap_or(0)))
+                .join(att["stored_name"].as_str().unwrap_or("")),
+        );
         drop(conn);
-        state.audit("attachment.deleted", "attachment", Some(id), &format!("Attachment {} deleted", att["original_name"].as_str().unwrap_or("")), Some(att.to_string()), None);
+        state.audit(
+            "attachment.deleted",
+            "attachment",
+            Some(id),
+            &format!(
+                "Attachment {} deleted",
+                att["original_name"].as_str().unwrap_or("")
+            ),
+            Some(att.to_string()),
+            None,
+        );
         Ok(json!({ "id": id }))
     })()
     .map_err(err)

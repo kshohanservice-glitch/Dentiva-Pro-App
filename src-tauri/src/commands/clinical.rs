@@ -15,8 +15,14 @@ fn err(e: CmdError) -> String {
 fn txn(conn: &rusqlite::Connection, f: impl FnOnce() -> CmdResult<()>) -> CmdResult<()> {
     conn.execute_batch("BEGIN IMMEDIATE")?;
     match f() {
-        Ok(()) => { conn.execute_batch("COMMIT")?; Ok(()) }
-        Err(e) => { let _ = conn.execute_batch("ROLLBACK"); Err(e) }
+        Ok(()) => {
+            conn.execute_batch("COMMIT")?;
+            Ok(())
+        }
+        Err(e) => {
+            let _ = conn.execute_batch("ROLLBACK");
+            Err(e)
+        }
     }
 }
 
@@ -91,15 +97,28 @@ pub fn visits_delete(state: State<'_, AppState>, payload: Value) -> Result<Value
             .ok_or_else(|| CmdError::new("NOT_FOUND", "Visit not found."))?;
         conn.execute("DELETE FROM visits WHERE id = ?1", [id])?;
         drop(conn);
-        state.audit("visit.deleted", "visit", Some(id), &format!("Visit #{id} deleted"), Some(before.to_string()), None);
+        state.audit(
+            "visit.deleted",
+            "visit",
+            Some(id),
+            &format!("Visit #{id} deleted"),
+            Some(before.to_string()),
+            None,
+        );
         Ok(json!({ "id": id }))
     })()
     .map_err(err)
 }
 
 // ------------------------------------------------------------ dental chart
-const ADULT_TEETH: [&str; 32] = ["18","17","16","15","14","13","12","11","21","22","23","24","25","26","27","28","48","47","46","45","44","43","42","41","31","32","33","34","35","36","37","38"];
-const CHILD_TEETH: [&str; 20] = ["55","54","53","52","51","61","62","63","64","65","85","84","83","82","81","71","72","73","74","75"];
+const ADULT_TEETH: [&str; 32] = [
+    "18", "17", "16", "15", "14", "13", "12", "11", "21", "22", "23", "24", "25", "26", "27", "28",
+    "48", "47", "46", "45", "44", "43", "42", "41", "31", "32", "33", "34", "35", "36", "37", "38",
+];
+const CHILD_TEETH: [&str; 20] = [
+    "55", "54", "53", "52", "51", "61", "62", "63", "64", "65", "85", "84", "83", "82", "81", "71",
+    "72", "73", "74", "75",
+];
 
 #[tauri::command]
 pub fn chart_get(state: State<'_, AppState>, payload: Value) -> Result<Value, String> {
@@ -166,8 +185,16 @@ pub fn treatments_list(state: State<'_, AppState>, payload: Value) -> Result<Val
     (|| -> CmdResult<Value> {
         state.gate("treatments_list")?;
         let conn = state.conn.lock().unwrap();
-        let q = payload.get("search").and_then(serde_json::Value::as_str).unwrap_or("").trim().to_string();
-        let active_only = payload.get("activeOnly").and_then(serde_json::Value::as_bool).unwrap_or(true);
+        let q = payload
+            .get("search")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        let active_only = payload
+            .get("activeOnly")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(true);
         let mut sql = String::from("SELECT * FROM treatment_catalog");
         let mut conds: Vec<String> = Vec::new();
         let mut args: Vec<String> = Vec::new();
@@ -175,14 +202,20 @@ pub fn treatments_list(state: State<'_, AppState>, payload: Value) -> Result<Val
             conds.push("active = 1".to_string());
         }
         if !q.is_empty() {
-            conds.push(format!("(name LIKE ?{} OR code LIKE ?{} OR category LIKE ?{})", args.len() + 1, args.len() + 1, args.len() + 1));
+            conds.push(format!(
+                "(name LIKE ?{} OR code LIKE ?{} OR category LIKE ?{})",
+                args.len() + 1,
+                args.len() + 1,
+                args.len() + 1
+            ));
             args.push(format!("%{q}%"));
         }
         if !conds.is_empty() {
             sql.push_str(&format!(" WHERE {}", conds.join(" AND ")));
         }
         sql.push_str(" ORDER BY category, name");
-        let refs: Vec<&dyn rusqlite::ToSql> = args.iter().map(|v| v as &dyn rusqlite::ToSql).collect();
+        let refs: Vec<&dyn rusqlite::ToSql> =
+            args.iter().map(|v| v as &dyn rusqlite::ToSql).collect();
         util::query_all(&conn, &sql, &refs).map(|v| json!(v))
     })()
     .map_err(err)
@@ -227,7 +260,10 @@ pub fn treatments_save(state: State<'_, AppState>, payload: Value) -> Result<Val
 }
 
 #[tauri::command]
-pub fn treatment_records_create(state: State<'_, AppState>, payload: Value) -> Result<Value, String> {
+pub fn treatment_records_create(
+    state: State<'_, AppState>,
+    payload: Value,
+) -> Result<Value, String> {
     (|| -> CmdResult<Value> {
         state.gate("treatment_records_create")?;
         let me = state.need("clinical.create_visit")?;
@@ -417,14 +453,31 @@ pub fn prescriptions_delete(state: State<'_, AppState>, payload: Value) -> Resul
             .ok_or_else(|| CmdError::new("NOT_FOUND", "Prescription not found."))?;
         conn.execute("DELETE FROM prescriptions WHERE id = ?1", [id])?;
         drop(conn);
-        state.audit("prescription.deleted", "prescription", Some(id), &format!("Prescription #{id} deleted"), Some(before.to_string()), None);
+        state.audit(
+            "prescription.deleted",
+            "prescription",
+            Some(id),
+            &format!("Prescription #{id} deleted"),
+            Some(before.to_string()),
+            None,
+        );
         Ok(json!({ "id": id }))
     })()
     .map_err(err)
 }
 
 // ------------------------------------------------------------ appointments
-const APPT_STATUSES: [&str; 9] = ["Scheduled", "Confirmed", "Arrived", "In Queue", "In Progress", "Completed", "No Show", "Cancelled", "Rescheduled"];
+const APPT_STATUSES: [&str; 9] = [
+    "Scheduled",
+    "Confirmed",
+    "Arrived",
+    "In Queue",
+    "In Progress",
+    "Completed",
+    "No Show",
+    "Cancelled",
+    "Rescheduled",
+];
 
 #[tauri::command]
 pub fn appointments_list(state: State<'_, AppState>, payload: Value) -> Result<Value, String> {
@@ -518,7 +571,14 @@ pub fn appointments_delete(state: State<'_, AppState>, payload: Value) -> Result
             .ok_or_else(|| CmdError::new("NOT_FOUND", "Appointment not found."))?;
         conn.execute("DELETE FROM appointments WHERE id = ?1", [id])?;
         drop(conn);
-        state.audit("appointment.deleted", "appointment", Some(id), &format!("Appointment #{id} deleted"), Some(before.to_string()), None);
+        state.audit(
+            "appointment.deleted",
+            "appointment",
+            Some(id),
+            &format!("Appointment #{id} deleted"),
+            Some(before.to_string()),
+            None,
+        );
         Ok(json!({ "id": id }))
     })()
     .map_err(err)
@@ -622,9 +682,19 @@ pub fn referrals_list(state: State<'_, AppState>, payload: Value) -> Result<Valu
     (|| -> CmdResult<Value> {
         state.gate("referrals_list")?;
         state.need("clinical.view")?;
-        let id = util::req_int(payload.get("patientId").unwrap_or(&Value::Null), "patientId", 1, i64::MAX)?;
+        let id = util::req_int(
+            payload.get("patientId").unwrap_or(&Value::Null),
+            "patientId",
+            1,
+            i64::MAX,
+        )?;
         let conn = state.conn.lock().unwrap();
-        util::query_all(&conn, "SELECT * FROM patient_referrals WHERE patient_id = ?1 ORDER BY referral_date DESC", &[&id]).map(|v| json!(v))
+        util::query_all(
+            &conn,
+            "SELECT * FROM patient_referrals WHERE patient_id = ?1 ORDER BY referral_date DESC",
+            &[&id],
+        )
+        .map(|v| json!(v))
     })()
     .map_err(err)
 }
@@ -665,7 +735,14 @@ pub fn referrals_delete(state: State<'_, AppState>, payload: Value) -> Result<Va
         let conn = state.conn.lock().unwrap();
         conn.execute("DELETE FROM patient_referrals WHERE id = ?1", [id])?;
         drop(conn);
-        state.audit("referral.deleted", "referral", Some(id), &format!("Referral #{id} deleted"), None, None);
+        state.audit(
+            "referral.deleted",
+            "referral",
+            Some(id),
+            &format!("Referral #{id} deleted"),
+            None,
+            None,
+        );
         Ok(json!({ "id": id }))
     })()
     .map_err(err)

@@ -9,7 +9,10 @@ use crate::error::{CmdError, CmdResult};
 
 pub fn hash_password(password: &str) -> CmdResult<String> {
     if password.len() < 8 {
-        return Err(CmdError::new("VALIDATION", "Password must be at least 8 characters."));
+        return Err(CmdError::new(
+            "VALIDATION",
+            "Password must be at least 8 characters.",
+        ));
     }
     let salt = SaltString::generate(&mut OsRng);
     Argon2::default()
@@ -27,5 +30,7 @@ pub fn verify_password(password: &str, stored: &str) -> bool {
     let Ok(parsed) = PasswordHash::new(stored) else {
         return false;
     };
-    Argon2::default().verify_password(password.as_bytes(), &parsed).is_ok()
+    Argon2::default()
+        .verify_password(password.as_bytes(), &parsed)
+        .is_ok()
 }

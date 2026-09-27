@@ -15,15 +15,27 @@ fn err(e: CmdError) -> String {
 fn txn(conn: &rusqlite::Connection, f: impl FnOnce() -> CmdResult<()>) -> CmdResult<()> {
     conn.execute_batch("BEGIN IMMEDIATE")?;
     match f() {
-        Ok(()) => { conn.execute_batch("COMMIT")?; Ok(()) }
-        Err(e) => { let _ = conn.execute_batch("ROLLBACK"); Err(e) }
+        Ok(()) => {
+            conn.execute_batch("COMMIT")?;
+            Ok(())
+        }
+        Err(e) => {
+            let _ = conn.execute_batch("ROLLBACK");
+            Err(e)
+        }
     }
 }
 
 fn next_seq(conn: &rusqlite::Connection, prefix_key: &str, next_key: &str) -> String {
     let prefix = util::setting(conn, prefix_key, "");
-    let next: i64 = util::setting(conn, next_key, "1").parse().unwrap_or(1).max(1);
-    let _ = conn.execute("UPDATE app_settings SET value = ?1 WHERE key = ?2", params![(next + 1).to_string(), next_key]);
+    let next: i64 = util::setting(conn, next_key, "1")
+        .parse()
+        .unwrap_or(1)
+        .max(1);
+    let _ = conn.execute(
+        "UPDATE app_settings SET value = ?1 WHERE key = ?2",
+        params![(next + 1).to_string(), next_key],
+    );
     let ymd = chrono::Utc::now().format("%Y%m%d").to_string();
     format!("{prefix}{ymd}-{next:04}")
 }
@@ -42,7 +54,12 @@ fn invoice_status(total: i64, paid: i64, prev: &str) -> String {
 }
 
 fn stock_balance(conn: &rusqlite::Connection, item_id: i64) -> i64 {
-    conn.query_row("SELECT COALESCE(SUM(qty_remaining), 0) FROM inventory_batches WHERE item_id = ?1", [item_id], |r| r.get(0)).unwrap_or(0)
+    conn.query_row(
+        "SELECT COALESCE(SUM(qty_remaining), 0) FROM inventory_batches WHERE item_id = ?1",
+        [item_id],
+        |r| r.get(0),
+    )
+    .unwrap_or(0)
 }
 
 // ------------------------------------------------------------ invoices
@@ -186,21 +203,36 @@ pub fn invoices_delete(state: State<'_, AppState>, payload: Value) -> Result<Val
         let before = util::query_one(&conn, "SELECT * FROM invoices WHERE id = ?1", &[&id])?
             .ok_or_else(|| CmdError::new("NOT_FOUND", "Invoice not found."))?;
         if before["paid_paisa"].as_i64().unwrap_or(0) > 0 {
-            return Err(CmdError::new("HAS_PAYMENTS", "Cannot delete an invoice with recorded payments. Reverse the payments first."));
+            return Err(CmdError::new(
+                "HAS_PAYMENTS",
+                "Cannot delete an invoice with recorded payments. Reverse the payments first.",
+            ));
         }
         txn(&conn, || {
             conn.execute("DELETE FROM invoices WHERE id = ?1", [id])?;
             Ok(())
         })?;
         drop(conn);
-        state.audit("invoice.deleted", "invoice", Some(id), &format!("Invoice {} deleted", before["invoice_no"].as_str().unwrap_or("")), Some(before.to_string()), None);
+        state.audit(
+            "invoice.deleted",
+            "invoice",
+            Some(id),
+            &format!(
+                "Invoice {} deleted",
+                before["invoice_no"].as_str().unwrap_or("")
+            ),
+            Some(before.to_string()),
+            None,
+        );
         Ok(json!({ "id": id }))
     })()
     .map_err(err)
 }
 
 // ------------------------------------------------------------ payments
-const PAY_METHODS: [&str; 8] = ["Cash", "Bank", "Card", "bKash", "Nagad", "Rocket", "Upay", "Others"];
+const PAY_METHODS: [&str; 8] = [
+    "Cash", "Bank", "Card", "bKash", "Nagad", "Rocket", "Upay", "Others",
+];
 
 #[tauri::command]
 pub fn payments_list(state: State<'_, AppState>, payload: Value) -> Result<Value, String> {
@@ -451,12 +483,26 @@ pub fn inventory_save(state: State<'_, AppState>, payload: Value) -> Result<Valu
 
 fn stock_move(state: &AppState, kind: &str, payload: &Value) -> CmdResult<Value> {
     let me = state.need("inventory.manage")?;
-    let item_id = util::req_int(payload.get("itemId").unwrap_or(&Value::Null), "itemId", 1, i64::MAX)?;
+    let item_id = util::req_int(
+        payload.get("itemId").unwrap_or(&Value::Null),
+        "itemId",
+        1,
+        i64::MAX,
+    )?;
     let conn = state.conn.lock().unwrap();
-    let item = util::query_one(&conn, "SELECT * FROM inventory_items WHERE id = ?1", &[&item_id])?
-        .ok_or_else(|| CmdError::new("NOT_FOUND", "Item not found."))?;
+    let item = util::query_one(
+        &conn,
+        "SELECT * FROM inventory_items WHERE id = ?1",
+        &[&item_id],
+    )?
+    .ok_or_else(|| CmdError::new("NOT_FOUND", "Item not found."))?;
     let reason = if kind == "receive" {
-        util::opt_text(payload.get("reason").unwrap_or(payload.get("note").unwrap_or(&Value::Null)), 500)
+        util::opt_text(
+            payload
+                .get("reason")
+                .unwrap_or(payload.get("note").unwrap_or(&Value::Null)),
+            500,
+        )
     } else {
         util::req_text(payload.get("reason").unwrap_or(&Value::Null), "reason", 500)?
     };
@@ -465,14 +511,37 @@ fn stock_move(state: &AppState, kind: &str, payload: &Value) -> CmdResult<Value>
     let now = util::now_local();
     txn(&conn, || {
         if kind == "receive" {
-            let qty = util::req_int(payload.get("qty").unwrap_or(&Value::Null), "qty", 1, 1_000_000)?;
-            let expiry: Option<String> = if payload.get("expiryDate").is_some() && !payload.get("expiryDate").and_then(serde_json::Value::as_str).unwrap_or("").is_empty() {
-                Some(util::req_date(payload.get("expiryDate").unwrap_or(&Value::Null), "expiryDate")?)
+            let qty = util::req_int(
+                payload.get("qty").unwrap_or(&Value::Null),
+                "qty",
+                1,
+                1_000_000,
+            )?;
+            let expiry: Option<String> = if payload.get("expiryDate").is_some()
+                && !payload
+                    .get("expiryDate")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("")
+                    .is_empty()
+            {
+                Some(util::req_date(
+                    payload.get("expiryDate").unwrap_or(&Value::Null),
+                    "expiryDate",
+                )?)
             } else {
                 None
             };
-            let purchase_date = if payload.get("purchaseDate").is_some() && !payload.get("purchaseDate").and_then(serde_json::Value::as_str).unwrap_or("").is_empty() {
-                util::req_date(payload.get("purchaseDate").unwrap_or(&Value::Null), "purchaseDate")?
+            let purchase_date = if payload.get("purchaseDate").is_some()
+                && !payload
+                    .get("purchaseDate")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("")
+                    .is_empty()
+            {
+                util::req_date(
+                    payload.get("purchaseDate").unwrap_or(&Value::Null),
+                    "purchaseDate",
+                )?
             } else {
                 util::today()
             };
@@ -485,7 +554,12 @@ fn stock_move(state: &AppState, kind: &str, payload: &Value) -> CmdResult<Value>
             conn.execute("INSERT INTO inventory_transactions (item_id, batch_id, kind, qty_delta, balance_after, reason, ref_type, performed_by, created_at) VALUES (?1, ?2, 'receive', ?3, ?4, ?5, '', ?6, ?7)",
                 params![item_id, batch_id, qty, bal, reason, me.id, now])?;
         } else if kind == "issue" {
-            let qty = util::req_int(payload.get("qty").unwrap_or(&Value::Null), "qty", 1, 1_000_000)?;
+            let qty = util::req_int(
+                payload.get("qty").unwrap_or(&Value::Null),
+                "qty",
+                1,
+                1_000_000,
+            )?;
             let batches = util::query_all(&conn, "SELECT * FROM inventory_batches WHERE item_id = ?1 AND qty_remaining > 0 ORDER BY expiry_date IS NULL, expiry_date, id", &[&item_id])?;
             let mut remaining = qty;
             let mut touched: Vec<i64> = Vec::new();
@@ -494,12 +568,21 @@ fn stock_move(state: &AppState, kind: &str, payload: &Value) -> CmdResult<Value>
                     break;
                 }
                 let take = remaining.min(b["qty_remaining"].as_i64().unwrap_or(0));
-                conn.execute("UPDATE inventory_batches SET qty_remaining = qty_remaining - ?1 WHERE id = ?2", params![take, b["id"].as_i64().unwrap_or(0)])?;
+                conn.execute(
+                    "UPDATE inventory_batches SET qty_remaining = qty_remaining - ?1 WHERE id = ?2",
+                    params![take, b["id"].as_i64().unwrap_or(0)],
+                )?;
                 touched.push(b["id"].as_i64().unwrap_or(0));
                 remaining -= take;
             }
             if remaining > 0 {
-                return Err(CmdError::new("INSUFFICIENT_STOCK", format!("Insufficient stock: {} available, {qty} requested.", qty - remaining)));
+                return Err(CmdError::new(
+                    "INSUFFICIENT_STOCK",
+                    format!(
+                        "Insufficient stock: {} available, {qty} requested.",
+                        qty - remaining
+                    ),
+                ));
             }
             batch_id = touched.first().copied();
             let bal = stock_balance(&conn, item_id);
@@ -509,18 +592,30 @@ fn stock_move(state: &AppState, kind: &str, payload: &Value) -> CmdResult<Value>
                 low_stock = Some(bal);
             }
         } else {
-            let after = util::req_int(payload.get("qtyAfter").unwrap_or(&Value::Null), "qtyAfter", 0, 1_000_000)?;
+            let after = util::req_int(
+                payload.get("qtyAfter").unwrap_or(&Value::Null),
+                "qtyAfter",
+                0,
+                1_000_000,
+            )?;
             let before = stock_balance(&conn, item_id);
             let delta = after - before;
             if delta != 0 {
-                let adj_id: i64 = match util::query_one(&conn, "SELECT * FROM inventory_batches WHERE item_id = ?1 AND batch_no = 'ADJUST'", &[&item_id])? {
+                let adj_id: i64 = match util::query_one(
+                    &conn,
+                    "SELECT * FROM inventory_batches WHERE item_id = ?1 AND batch_no = 'ADJUST'",
+                    &[&item_id],
+                )? {
                     Some(a) => a["id"].as_i64().unwrap_or(0),
                     None => {
                         conn.execute("INSERT INTO inventory_batches (item_id, batch_no, qty_received, qty_remaining, created_at) VALUES (?1, 'ADJUST', 0, 0, ?2)", params![item_id, now])?;
                         conn.last_insert_rowid()
                     }
                 };
-                conn.execute("UPDATE inventory_batches SET qty_remaining = qty_remaining + ?1 WHERE id = ?2", params![delta, adj_id])?;
+                conn.execute(
+                    "UPDATE inventory_batches SET qty_remaining = qty_remaining + ?1 WHERE id = ?2",
+                    params![delta, adj_id],
+                )?;
                 batch_id = Some(adj_id);
                 conn.execute("INSERT INTO stock_adjustments (item_id, batch_id, qty_before, qty_after, reason, performed_by, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                     params![item_id, adj_id, before, after, reason, me.id, now])?;
@@ -534,11 +629,28 @@ fn stock_move(state: &AppState, kind: &str, payload: &Value) -> CmdResult<Value>
     let item_name = item["name"].as_str().unwrap_or("").to_string();
     drop(conn);
     if let Some(bal) = low_stock {
-        state.notify("warning", "inventory", "Low stock",
-            &format!("{item_name} is at {bal} {} (reorder level {}).", item["unit"].as_str().unwrap_or(""), item["reorder_level"].as_i64().unwrap_or(0)),
-            Some("inventory_item"), Some(item_id), Some("inventory"));
+        state.notify(
+            "warning",
+            "inventory",
+            "Low stock",
+            &format!(
+                "{item_name} is at {bal} {} (reorder level {}).",
+                item["unit"].as_str().unwrap_or(""),
+                item["reorder_level"].as_i64().unwrap_or(0)
+            ),
+            Some("inventory_item"),
+            Some(item_id),
+            Some("inventory"),
+        );
     }
-    state.audit(&format!("inventory.{kind}"), "inventory_item", Some(item_id), &format!("Stock {kind} for {item_name}: {reason}"), None, Some(payload.to_string()));
+    state.audit(
+        &format!("inventory.{kind}"),
+        "inventory_item",
+        Some(item_id),
+        &format!("Stock {kind} for {item_name}: {reason}"),
+        None,
+        Some(payload.to_string()),
+    );
     Ok(json!({ "itemId": item_id, "batchId": batch_id, "stock": stock }))
 }
 
@@ -566,12 +678,23 @@ pub fn suppliers_list(state: State<'_, AppState>, payload: Value) -> Result<Valu
         state.gate("suppliers_list")?;
         state.need("inventory.view")?;
         let conn = state.conn.lock().unwrap();
-        let q = payload.get("search").and_then(serde_json::Value::as_str).unwrap_or("").trim().to_string();
+        let q = payload
+            .get("search")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("")
+            .trim()
+            .to_string();
         if q.is_empty() {
-            util::query_all(&conn, "SELECT * FROM suppliers ORDER BY name", params!()).map(|v| json!(v))
+            util::query_all(&conn, "SELECT * FROM suppliers ORDER BY name", params!())
+                .map(|v| json!(v))
         } else {
             let like = format!("%{q}%");
-            util::query_all(&conn, "SELECT * FROM suppliers WHERE name LIKE ?1 OR phone LIKE ?1 ORDER BY name", &[&like]).map(|v| json!(v))
+            util::query_all(
+                &conn,
+                "SELECT * FROM suppliers WHERE name LIKE ?1 OR phone LIKE ?1 ORDER BY name",
+                &[&like],
+            )
+            .map(|v| json!(v))
         }
     })()
     .map_err(err)
@@ -630,11 +753,24 @@ pub fn categories_list(state: State<'_, AppState>, payload: Value) -> Result<Val
     (|| -> CmdResult<Value> {
         state.gate("categories_list")?;
         let conn = state.conn.lock().unwrap();
-        let kind = payload.get("kind").and_then(serde_json::Value::as_str).unwrap_or("");
+        let kind = payload
+            .get("kind")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("");
         if kind.is_empty() {
-            util::query_all(&conn, "SELECT * FROM accounting_categories ORDER BY kind, name", params!()).map(|v| json!(v))
+            util::query_all(
+                &conn,
+                "SELECT * FROM accounting_categories ORDER BY kind, name",
+                params!(),
+            )
+            .map(|v| json!(v))
         } else {
-            util::query_all(&conn, "SELECT * FROM accounting_categories WHERE kind = ?1 ORDER BY name", &[&kind]).map(|v| json!(v))
+            util::query_all(
+                &conn,
+                "SELECT * FROM accounting_categories WHERE kind = ?1 ORDER BY name",
+                &[&kind],
+            )
+            .map(|v| json!(v))
         }
     })()
     .map_err(err)
@@ -668,58 +804,125 @@ pub fn categories_save(state: State<'_, AppState>, payload: Value) -> Result<Val
     .map_err(err)
 }
 
-fn money_entries(state: &AppState, table: &str, payload: &Value, list_only: bool) -> CmdResult<Value> {
-    let date_col = if table == "expenses" { "expense_date" } else { "income_date" };
+fn money_entries(
+    state: &AppState,
+    table: &str,
+    payload: &Value,
+    list_only: bool,
+) -> CmdResult<Value> {
+    let date_col = if table == "expenses" {
+        "expense_date"
+    } else {
+        "income_date"
+    };
     if list_only {
         state.need("accounting.view")?;
         let conn = state.conn.lock().unwrap();
         let mut conds: Vec<String> = Vec::new();
         let mut args: Vec<String> = Vec::new();
         if let Some(f) = payload.get("from").and_then(serde_json::Value::as_str) {
-            if !f.is_empty() { conds.push(format!("e.{date_col} >= ?{}", args.len() + 1)); args.push(f.to_string()); }
+            if !f.is_empty() {
+                conds.push(format!("e.{date_col} >= ?{}", args.len() + 1));
+                args.push(f.to_string());
+            }
         }
         if let Some(t) = payload.get("to").and_then(serde_json::Value::as_str) {
-            if !t.is_empty() { conds.push(format!("e.{date_col} <= ?{}", args.len() + 1)); args.push(t.to_string()); }
+            if !t.is_empty() {
+                conds.push(format!("e.{date_col} <= ?{}", args.len() + 1));
+                args.push(t.to_string());
+            }
         }
-        if let Some(c) = payload.get("categoryId").and_then(serde_json::Value::as_i64) {
-            if c > 0 { conds.push(format!("e.category_id = {c}")); }
+        if let Some(c) = payload
+            .get("categoryId")
+            .and_then(serde_json::Value::as_i64)
+        {
+            if c > 0 {
+                conds.push(format!("e.category_id = {c}"));
+            }
         }
-        let w = if conds.is_empty() { String::new() } else { format!("WHERE {}", conds.join(" AND ")) };
-        let refs: Vec<&dyn rusqlite::ToSql> = args.iter().map(|v| v as &dyn rusqlite::ToSql).collect();
+        let w = if conds.is_empty() {
+            String::new()
+        } else {
+            format!("WHERE {}", conds.join(" AND "))
+        };
+        let refs: Vec<&dyn rusqlite::ToSql> =
+            args.iter().map(|v| v as &dyn rusqlite::ToSql).collect();
         return util::query_all(&conn, &format!("SELECT e.*, c.name AS category_name, u.full_name AS created_by_name FROM {table} e LEFT JOIN accounting_categories c ON c.id = e.category_id LEFT JOIN users u ON u.id = e.created_by {w} ORDER BY e.{date_col} DESC, e.id DESC LIMIT 2000"), &refs).map(|v| json!(v));
     }
     let me = state.need("accounting.manage")?;
-    if payload.get("delete").and_then(serde_json::Value::as_bool).unwrap_or(false) {
+    if payload
+        .get("delete")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false)
+    {
         let id = util::req_int(payload.get("id").unwrap_or(&Value::Null), "id", 1, i64::MAX)?;
         let conn = state.conn.lock().unwrap();
-        let before = util::query_one(&conn, &format!("SELECT * FROM {table} WHERE id = ?1"), &[&id])?;
+        let before = util::query_one(
+            &conn,
+            &format!("SELECT * FROM {table} WHERE id = ?1"),
+            &[&id],
+        )?;
         conn.execute(&format!("DELETE FROM {table} WHERE id = ?1"), [id])?;
         drop(conn);
-        state.audit(&format!("{table}.deleted"), table, Some(id), &format!("{table} #{id} deleted"), before.map(|b| b.to_string()), None);
+        state.audit(
+            &format!("{table}.deleted"),
+            table,
+            Some(id),
+            &format!("{table} #{id} deleted"),
+            before.map(|b| b.to_string()),
+            None,
+        );
         return Ok(json!({ "id": id }));
     }
     let amount = util::req_money(payload.get("amountPaisa").unwrap_or(&Value::Null), "amount")?;
     if amount <= 0 {
-        return Err(CmdError::new("VALIDATION", "Amount must be greater than zero."));
+        return Err(CmdError::new(
+            "VALIDATION",
+            "Amount must be greater than zero.",
+        ));
     }
     let date = util::req_date(payload.get("date").unwrap_or(&json!(util::today())), "date")?;
     let conn = state.conn.lock().unwrap();
-    let category_id = payload.get("categoryId").and_then(serde_json::Value::as_i64).filter(|n| *n > 0);
-    let method = { let m = util::opt_text(payload.get("method").unwrap_or(&Value::Null), 32); if m.is_empty() { "Cash".to_string() } else { m } };
+    let category_id = payload
+        .get("categoryId")
+        .and_then(serde_json::Value::as_i64)
+        .filter(|n| *n > 0);
+    let method = {
+        let m = util::opt_text(payload.get("method").unwrap_or(&Value::Null), 32);
+        if m.is_empty() {
+            "Cash".to_string()
+        } else {
+            m
+        }
+    };
     let reference = util::opt_text(payload.get("reference").unwrap_or(&Value::Null), 120);
     let note = util::opt_text(payload.get("note").unwrap_or(&Value::Null), 2000);
     if let Some(id) = util::opt_id(payload.get("id").unwrap_or(&Value::Null)) {
         conn.execute(&format!("UPDATE {table} SET category_id = ?1, amount_paisa = ?2, {date_col} = ?3, method = ?4, reference = ?5, note = ?6 WHERE id = ?7"),
             params![category_id, amount, date, method, reference, note, id])?;
         drop(conn);
-        state.audit(&format!("{table}.updated"), table, Some(id), &format!("{table} #{id} updated"), None, Some(payload.to_string()));
+        state.audit(
+            &format!("{table}.updated"),
+            table,
+            Some(id),
+            &format!("{table} #{id} updated"),
+            None,
+            Some(payload.to_string()),
+        );
         return Ok(json!({ "id": id }));
     }
     conn.execute(&format!("INSERT INTO {table} (category_id, amount_paisa, {date_col}, method, reference, note, created_by, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)"),
         params![category_id, amount, date, method, reference, note, me.id, util::now_local()])?;
     let id = conn.last_insert_rowid();
     drop(conn);
-    state.audit(&format!("{table}.created"), table, Some(id), &format!("{table} #{id} recorded ({amount} paisa)"), None, Some(payload.to_string()));
+    state.audit(
+        &format!("{table}.created"),
+        table,
+        Some(id),
+        &format!("{table} #{id} recorded ({amount} paisa)"),
+        None,
+        Some(payload.to_string()),
+    );
     Ok(json!({ "id": id }))
 }
 

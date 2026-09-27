@@ -29,13 +29,20 @@ pub fn app_status(state: State<'_, AppState>) -> Result<Value, String> {
         let conn = state.conn.lock().unwrap();
         let activated = util::meta_get(&conn, "activated") == "1";
         let setup_complete = util::meta_get(&conn, "setup_complete") == "1";
-        let mins: i64 = util::setting(&conn, "auto_lock_minutes", "15").parse().unwrap_or(15);
+        let mins: i64 = util::setting(&conn, "auto_lock_minutes", "15")
+            .parse()
+            .unwrap_or(15);
         let locked = *state.locked.lock().unwrap();
-        let session = if locked { None } else { state.session.lock().unwrap().clone() };
-        let integrity_warning = match conn.query_row("PRAGMA quick_check", (), |r| r.get::<_, String>(0)) {
-            Ok(v) if v == "ok" => String::new(),
-            _ => util::now_local(),
+        let session = if locked {
+            None
+        } else {
+            state.session.lock().unwrap().clone()
         };
+        let integrity_warning =
+            match conn.query_row("PRAGMA quick_check", (), |r| r.get::<_, String>(0)) {
+                Ok(v) if v == "ok" => String::new(),
+                _ => util::now_local(),
+            };
         Ok(json!({
             "backend": "tauri",
             "version": db::APP_VERSION,
@@ -56,10 +63,23 @@ pub fn app_status(state: State<'_, AppState>) -> Result<Value, String> {
 pub fn activate(state: State<'_, AppState>, payload: Value) -> Result<Value, String> {
     (|| -> CmdResult<Value> {
         state.gate("activate")?;
-        let code = payload.get("code").and_then(serde_json::Value::as_str).unwrap_or("");
+        let code = payload
+            .get("code")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("");
         if !crate::activation::verify_activation_code(code) {
-            state.audit("activation.failed", "activation", None, "Failed activation attempt", None, None);
-            return Err(CmdError::new("ACTIVATION_INVALID", "Invalid activation code. Please check the code and try again."));
+            state.audit(
+                "activation.failed",
+                "activation",
+                None,
+                "Failed activation attempt",
+                None,
+                None,
+            );
+            return Err(CmdError::new(
+                "ACTIVATION_INVALID",
+                "Invalid activation code. Please check the code and try again.",
+            ));
         }
         let conn = state.conn.lock().unwrap();
         let receipt = crate::activation::activation_receipt(&state.install_id);
@@ -68,7 +88,14 @@ pub fn activate(state: State<'_, AppState>, payload: Value) -> Result<Value, Str
         util::meta_set(&conn, "activated_at", &util::now_local())?;
         std::fs::write(&state.paths.receipt_path, format!("{receipt}\n"))?;
         drop(conn);
-        state.audit("activation.completed", "activation", None, "Application activated", None, None);
+        state.audit(
+            "activation.completed",
+            "activation",
+            None,
+            "Application activated",
+            None,
+            None,
+        );
         Ok(json!({ "ok": true }))
     })()
     .map_err(err)
@@ -223,7 +250,14 @@ pub fn logout(state: State<'_, AppState>) -> Result<Value, String> {
         state.gate("logout")?;
         let s = state.session.lock().unwrap().clone();
         if let Some(u) = s {
-            state.audit("auth.logout", "user", Some(u.id), &format!("User \"{}\" logged out", u.username), None, None);
+            state.audit(
+                "auth.logout",
+                "user",
+                Some(u.id),
+                &format!("User \"{}\" logged out", u.username),
+                None,
+                None,
+            );
         }
         *state.session.lock().unwrap() = None;
         *state.locked.lock().unwrap() = false;
@@ -239,7 +273,10 @@ pub fn lock_app(state: State<'_, AppState>) -> Result<Value, String> {
         let sid = state.session.lock().unwrap().clone().map(|s| s.id);
         *state.locked.lock().unwrap() = true;
         let conn = state.conn.lock().unwrap();
-        conn.execute("UPDATE app_lock_state SET locked = 1, locked_at = ?1, locked_by = ?2 WHERE id = 1", params![util::now_local(), sid])?;
+        conn.execute(
+            "UPDATE app_lock_state SET locked = 1, locked_at = ?1, locked_by = ?2 WHERE id = 1",
+            params![util::now_local(), sid],
+        )?;
         Ok(json!({ "ok": true }))
     })()
     .map_err(err)
@@ -249,17 +286,39 @@ pub fn lock_app(state: State<'_, AppState>) -> Result<Value, String> {
 pub fn unlock(state: State<'_, AppState>, payload: Value) -> Result<Value, String> {
     (|| -> CmdResult<Value> {
         state.gate("unlock")?;
-        let s = state.session.lock().unwrap().clone().ok_or_else(|| CmdError::new("UNAUTHENTICATED", "Please log in."))?;
+        let s = state
+            .session
+            .lock()
+            .unwrap()
+            .clone()
+            .ok_or_else(|| CmdError::new("UNAUTHENTICATED", "Please log in."))?;
         let conn = state.conn.lock().unwrap();
         let u = util::query_one(&conn, "SELECT * FROM users WHERE id = ?1", &[&s.id])?;
         let active = u.as_ref().and_then(|x| x["active"].as_i64()).unwrap_or(0) == 1;
-        let stored = u.as_ref().and_then(|x| x["password_hash"].as_str()).unwrap_or("").to_string();
+        let stored = u
+            .as_ref()
+            .and_then(|x| x["password_hash"].as_str())
+            .unwrap_or("")
+            .to_string();
         if u.is_none() || !active {
             return Err(CmdError::new("AUTH_FAILED", "Account is disabled."));
         }
-        if !crate::auth::verify_password(payload.get("password").and_then(serde_json::Value::as_str).unwrap_or(""), &stored) {
+        if !crate::auth::verify_password(
+            payload
+                .get("password")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or(""),
+            &stored,
+        ) {
             drop(conn);
-            state.audit("auth.unlock_failed", "user", Some(s.id), "Failed unlock attempt", None, None);
+            state.audit(
+                "auth.unlock_failed",
+                "user",
+                Some(s.id),
+                "Failed unlock attempt",
+                None,
+                None,
+            );
             return Err(CmdError::new("AUTH_FAILED", "Incorrect password."));
         }
         conn.execute("UPDATE app_lock_state SET locked = 0 WHERE id = 1", ())?;
@@ -275,22 +334,52 @@ pub fn change_password(state: State<'_, AppState>, payload: Value) -> Result<Val
     (|| -> CmdResult<Value> {
         state.gate("change_password")?;
         if *state.locked.lock().unwrap() {
-            return Err(CmdError::new("LOCKED", "Application is locked. Please unlock to continue."));
+            return Err(CmdError::new(
+                "LOCKED",
+                "Application is locked. Please unlock to continue.",
+            ));
         }
-        let s = state.optional_session().ok_or_else(|| CmdError::new("UNAUTHENTICATED", "Please log in."))?;
+        let s = state
+            .optional_session()
+            .ok_or_else(|| CmdError::new("UNAUTHENTICATED", "Please log in."))?;
         let conn = state.conn.lock().unwrap();
         let u = util::query_one(&conn, "SELECT * FROM users WHERE id = ?1", &[&s.id])?
             .ok_or_else(|| CmdError::new("NOT_FOUND", "User not found."))?;
-        if !crate::auth::verify_password(payload.get("current").and_then(serde_json::Value::as_str).unwrap_or(""), u["password_hash"].as_str().unwrap_or("")) {
-            return Err(CmdError::new("AUTH_FAILED", "Current password is incorrect."));
+        if !crate::auth::verify_password(
+            payload
+                .get("current")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or(""),
+            u["password_hash"].as_str().unwrap_or(""),
+        ) {
+            return Err(CmdError::new(
+                "AUTH_FAILED",
+                "Current password is incorrect.",
+            ));
         }
-        let next = payload.get("next").and_then(serde_json::Value::as_str).unwrap_or("");
+        let next = payload
+            .get("next")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("");
         if next.len() < 8 {
-            return Err(CmdError::new("VALIDATION", "New password must be at least 8 characters."));
+            return Err(CmdError::new(
+                "VALIDATION",
+                "New password must be at least 8 characters.",
+            ));
         }
-        conn.execute("UPDATE users SET password_hash = ?1 WHERE id = ?2", params![crate::auth::hash_password(next)?, s.id])?;
+        conn.execute(
+            "UPDATE users SET password_hash = ?1 WHERE id = ?2",
+            params![crate::auth::hash_password(next)?, s.id],
+        )?;
         drop(conn);
-        state.audit("auth.password_changed", "user", Some(s.id), "Password changed", None, None);
+        state.audit(
+            "auth.password_changed",
+            "user",
+            Some(s.id),
+            "Password changed",
+            None,
+            None,
+        );
         Ok(json!({ "ok": true }))
     })()
     .map_err(err)
@@ -314,7 +403,10 @@ pub fn settings_get(state: State<'_, AppState>, payload: Value) -> Result<Value,
             }
         }
         for r in util::query_all(&conn, "SELECT key, value FROM app_settings", params!())? {
-            map.insert(r["key"].as_str().unwrap_or("").to_string(), json!(r["value"].as_str().unwrap_or("")));
+            map.insert(
+                r["key"].as_str().unwrap_or("").to_string(),
+                json!(r["value"].as_str().unwrap_or("")),
+            );
         }
         Ok(json!(map))
     })()
@@ -472,15 +564,23 @@ pub fn refresh_system_notifications(state: &AppState) {
             low_count = low.len() as i64;
             low_names = low.iter().take(5).map(|r| r["name"].as_str().unwrap_or("").to_string()).collect();
         }
-        let soon = (chrono::Local::now() + chrono::Duration::days(30)).format("%Y-%m-%d").to_string();
+        let soon = (chrono::Local::now() + chrono::Duration::days(30))
+            .format("%Y-%m-%d")
+            .to_string();
         let exp: i64 = conn.query_row("SELECT COUNT(DISTINCT b.item_id) FROM inventory_batches b WHERE b.qty_remaining > 0 AND b.expiry_date IS NOT NULL AND b.expiry_date <= ?1", [&soon], |r| r.get(0)).unwrap_or(0);
-        let days: i64 = util::setting(&conn, "auto_backup_days", "7").parse().unwrap_or(0);
+        let days: i64 = util::setting(&conn, "auto_backup_days", "7")
+            .parse()
+            .unwrap_or(0);
         let last = util::setting(&conn, "last_auto_backup", "");
         let mut backup_due = false;
         let mut backup_diff = 0i64;
         if days > 0 {
             let last_date: String = last.chars().take(10).collect();
-            let last_date = if last_date.len() == 10 { last_date } else { "2000-01-01".to_string() };
+            let last_date = if last_date.len() == 10 {
+                last_date
+            } else {
+                "2000-01-01".to_string()
+            };
             let diff = chrono::NaiveDate::parse_from_str(&today, "%Y-%m-%d")
                 .ok()
                 .zip(chrono::NaiveDate::parse_from_str(&last_date, "%Y-%m-%d").ok())
@@ -489,23 +589,71 @@ pub fn refresh_system_notifications(state: &AppState) {
             backup_diff = diff;
             backup_due = diff >= days;
         }
-        (appts, missed, low_names, low_count, exp, backup_due, backup_diff)
+        (
+            appts,
+            missed,
+            low_names,
+            low_count,
+            exp,
+            backup_due,
+            backup_diff,
+        )
     };
     // Phase 2: connection released; notify() re-locks it safely.
     if appts > 0 {
-        state.notify("info", "appointment", &format!("{appts} appointment(s) today"), "Review today\u{2019}s schedule and confirm arrivals.", Some("appointment"), None, Some("appointments"));
+        state.notify(
+            "info",
+            "appointment",
+            &format!("{appts} appointment(s) today"),
+            "Review today\u{2019}s schedule and confirm arrivals.",
+            Some("appointment"),
+            None,
+            Some("appointments"),
+        );
     }
     if missed > 0 {
-        state.notify("warning", "appointment", &format!("{missed} missed appointment(s)"), "Yesterday\u{2019}s unconfirmed appointments need follow-up.", Some("appointment"), None, Some("appointments"));
+        state.notify(
+            "warning",
+            "appointment",
+            &format!("{missed} missed appointment(s)"),
+            "Yesterday\u{2019}s unconfirmed appointments need follow-up.",
+            Some("appointment"),
+            None,
+            Some("appointments"),
+        );
     }
     if low_count > 0 {
-        state.notify("warning", "inventory", &format!("{low_count} item(s) low on stock"), &low_names.join(", "), Some("inventory_item"), None, Some("inventory"));
+        state.notify(
+            "warning",
+            "inventory",
+            &format!("{low_count} item(s) low on stock"),
+            &low_names.join(", "),
+            Some("inventory_item"),
+            None,
+            Some("inventory"),
+        );
     }
     if exp > 0 {
-        state.notify("warning", "inventory", &format!("{exp} item(s) expiring soon"), "Check expiry dates and rotate stock.", Some("inventory_item"), None, Some("inventory"));
+        state.notify(
+            "warning",
+            "inventory",
+            &format!("{exp} item(s) expiring soon"),
+            "Check expiry dates and rotate stock.",
+            Some("inventory_item"),
+            None,
+            Some("inventory"),
+        );
     }
     if backup_due {
-        state.notify("warning", "backup", "Backup is due", &format!("No backup for {backup_diff} day(s). Run a backup now."), None, None, Some("backup"));
+        state.notify(
+            "warning",
+            "backup",
+            "Backup is due",
+            &format!("No backup for {backup_diff} day(s). Run a backup now."),
+            None,
+            None,
+            Some("backup"),
+        );
     }
 }
 
@@ -517,12 +665,30 @@ pub fn notifications_list(state: State<'_, AppState>, payload: Value) -> Result<
             return Err(CmdError::new("UNAUTHENTICATED", "Please log in."));
         }
         let conn = state.conn.lock().unwrap();
-        let rows = if payload.get("unreadOnly").and_then(serde_json::Value::as_bool).unwrap_or(false) {
-            util::query_all(&conn, "SELECT * FROM notifications WHERE is_read = 0 ORDER BY id DESC LIMIT 200", params!())?
+        let rows = if payload
+            .get("unreadOnly")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false)
+        {
+            util::query_all(
+                &conn,
+                "SELECT * FROM notifications WHERE is_read = 0 ORDER BY id DESC LIMIT 200",
+                params!(),
+            )?
         } else {
-            util::query_all(&conn, "SELECT * FROM notifications ORDER BY id DESC LIMIT 200", params!())?
+            util::query_all(
+                &conn,
+                "SELECT * FROM notifications ORDER BY id DESC LIMIT 200",
+                params!(),
+            )?
         };
-        let unread: i64 = conn.query_row("SELECT COUNT(*) FROM notifications WHERE is_read = 0", (), |r| r.get(0)).unwrap_or(0);
+        let unread: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM notifications WHERE is_read = 0",
+                (),
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
         Ok(json!({ "rows": rows, "unread": unread }))
     })()
     .map_err(err)
@@ -536,7 +702,11 @@ pub fn notifications_mark(state: State<'_, AppState>, payload: Value) -> Result<
             return Err(CmdError::new("UNAUTHENTICATED", "Please log in."));
         }
         let conn = state.conn.lock().unwrap();
-        if payload.get("all").and_then(serde_json::Value::as_bool).unwrap_or(false) {
+        if payload
+            .get("all")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false)
+        {
             conn.execute("UPDATE notifications SET is_read = 1", ())?;
         } else {
             let id = util::req_int(payload.get("id").unwrap_or(&Value::Null), "id", 1, i64::MAX)?;
@@ -583,20 +753,35 @@ pub fn audit_list(state: State<'_, AppState>, payload: Value) -> Result<Value, S
         let mut conds: Vec<String> = Vec::new();
         let mut args: Vec<String> = Vec::new();
         if let Some(f) = payload.get("from").and_then(serde_json::Value::as_str) {
-            if !f.is_empty() { conds.push(format!("timestamp >= ?{}", args.len() + 1)); args.push(f.to_string()); }
+            if !f.is_empty() {
+                conds.push(format!("timestamp >= ?{}", args.len() + 1));
+                args.push(f.to_string());
+            }
         }
         if let Some(t) = payload.get("to").and_then(serde_json::Value::as_str) {
-            if !t.is_empty() { conds.push(format!("timestamp <= ?{}", args.len() + 1)); args.push(format!("{t}T23:59:59")); }
+            if !t.is_empty() {
+                conds.push(format!("timestamp <= ?{}", args.len() + 1));
+                args.push(format!("{t}T23:59:59"));
+            }
         }
         if let Some(u) = payload.get("userId").and_then(serde_json::Value::as_i64) {
-            if u > 0 { conds.push(format!("user_id = {u}")); }
+            if u > 0 {
+                conds.push(format!("user_id = {u}"));
+            }
         }
         if let Some(a) = payload.get("action").and_then(serde_json::Value::as_str) {
-            if !a.is_empty() { conds.push(format!("action LIKE ?{}", args.len() + 1)); args.push(format!("%{a}%")); }
+            if !a.is_empty() {
+                conds.push(format!("action LIKE ?{}", args.len() + 1));
+                args.push(format!("%{a}%"));
+            }
         }
         if let Some(q) = payload.get("search").and_then(serde_json::Value::as_str) {
             if !q.is_empty() {
-                conds.push(format!("(summary LIKE ?{} OR username LIKE ?{})", args.len() + 1, args.len() + 1));
+                conds.push(format!(
+                    "(summary LIKE ?{} OR username LIKE ?{})",
+                    args.len() + 1,
+                    args.len() + 1
+                ));
                 args.push(format!("%{q}%"));
             }
         }
@@ -605,11 +790,25 @@ pub fn audit_list(state: State<'_, AppState>, payload: Value) -> Result<Value, S
             sql.push_str(&w);
             count_sql.push_str(&w);
         }
-        let page = payload.get("page").and_then(serde_json::Value::as_i64).unwrap_or(1).max(1);
-        let page_size = payload.get("pageSize").and_then(serde_json::Value::as_i64).unwrap_or(50).clamp(10, 200);
-        let refs: Vec<&dyn rusqlite::ToSql> = args.iter().map(|v| v as &dyn rusqlite::ToSql).collect();
-        let total: i64 = conn.query_row(&count_sql, &refs[..], |r| r.get(0)).unwrap_or(0);
-        sql.push_str(&format!(" ORDER BY id DESC LIMIT {page_size} OFFSET {}", (page - 1) * page_size));
+        let page = payload
+            .get("page")
+            .and_then(serde_json::Value::as_i64)
+            .unwrap_or(1)
+            .max(1);
+        let page_size = payload
+            .get("pageSize")
+            .and_then(serde_json::Value::as_i64)
+            .unwrap_or(50)
+            .clamp(10, 200);
+        let refs: Vec<&dyn rusqlite::ToSql> =
+            args.iter().map(|v| v as &dyn rusqlite::ToSql).collect();
+        let total: i64 = conn
+            .query_row(&count_sql, &refs[..], |r| r.get(0))
+            .unwrap_or(0);
+        sql.push_str(&format!(
+            " ORDER BY id DESC LIMIT {page_size} OFFSET {}",
+            (page - 1) * page_size
+        ));
         let rows = util::query_all(&conn, &sql, &refs)?;
         Ok(json!({ "rows": rows, "total": total, "page": page, "pageSize": page_size }))
     })()
@@ -630,8 +829,15 @@ pub struct ParsedContainer {
 
 pub fn parse_container(b64: &str) -> CmdResult<ParsedContainer> {
     use base64::Engine;
-    let invalid = || CmdError::new("INVALID_BACKUP", "The selected file is not a valid Dentiva Pro backup.");
-    let blob = base64::engine::general_purpose::STANDARD.decode(b64.as_bytes()).map_err(|_| invalid())?;
+    let invalid = || {
+        CmdError::new(
+            "INVALID_BACKUP",
+            "The selected file is not a valid Dentiva Pro backup.",
+        )
+    };
+    let blob = base64::engine::general_purpose::STANDARD
+        .decode(b64.as_bytes())
+        .map_err(|_| invalid())?;
     let text = String::from_utf8(blob).map_err(|_| invalid())?;
     let c: Value = serde_json::from_str(&text).map_err(|_| invalid())?;
     if c["magic"].as_str().unwrap_or("") != "DENTIVABAK" || c["dbBase64"].as_str().is_none() {
@@ -661,7 +867,10 @@ fn backup_filename(kind: &str) -> String {
 }
 
 fn snapshot_db_bytes(state: &AppState) -> CmdResult<Vec<u8>> {
-    let tmp = state.paths.data_dir.join(format!("backup-tmp-{}.db", chrono::Local::now().format("%Y%m%d%H%M%S%f")));
+    let tmp = state.paths.data_dir.join(format!(
+        "backup-tmp-{}.db",
+        chrono::Local::now().format("%Y%m%d%H%M%S%f")
+    ));
     {
         let conn = state.conn.lock().unwrap();
         let _ = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
@@ -678,7 +887,9 @@ pub fn run_backup(state: &AppState, kind: &str, location: &str) -> CmdResult<Val
     let s = state.need("backup.run")?;
     {
         let conn = state.conn.lock().unwrap();
-        let chk: String = conn.query_row("PRAGMA integrity_check", (), |r| r.get(0)).unwrap_or_default();
+        let chk: String = conn
+            .query_row("PRAGMA integrity_check", (), |r| r.get(0))
+            .unwrap_or_default();
         if chk != "ok" {
             return Err(CmdError::new("DB_CORRUPT", "Database integrity check failed. Backup aborted to avoid archiving a corrupt database."));
         }
@@ -686,8 +897,14 @@ pub fn run_backup(state: &AppState, kind: &str, location: &str) -> CmdResult<Val
     let db_bytes = snapshot_db_bytes(state)?;
     let db_b64 = base64::engine::general_purpose::STANDARD.encode(&db_bytes);
     let conn = state.conn.lock().unwrap();
-    let atts = util::query_all(&conn, "SELECT patient_id, stored_name, mime, original_name FROM patient_attachments", params!())?;
-    let clinic_name: String = conn.query_row("SELECT name FROM clinic WHERE id = 1", (), |r| r.get(0)).unwrap_or_default();
+    let atts = util::query_all(
+        &conn,
+        "SELECT patient_id, stored_name, mime, original_name FROM patient_attachments",
+        params!(),
+    )?;
+    let clinic_name: String = conn
+        .query_row("SELECT name FROM clinic WHERE id = 1", (), |r| r.get(0))
+        .unwrap_or_default();
     drop(conn);
     let mut files: Vec<Value> = Vec::new();
     let mut missing: Vec<String> = Vec::new();
@@ -717,20 +934,46 @@ pub fn run_backup(state: &AppState, kind: &str, location: &str) -> CmdResult<Val
             if missing.is_empty() { String::new() } else { format!("Missing {} attachment file(s): {}", missing.len(), missing.iter().take(5).cloned().collect::<Vec<_>>().join(", ")) },
             sha256_hex_str(&db_b64)])?;
     let id = conn.last_insert_rowid();
-    conn.execute("UPDATE app_settings SET value = ?1 WHERE key = 'last_auto_backup'", params![util::now_local()])?;
+    conn.execute(
+        "UPDATE app_settings SET value = ?1 WHERE key = 'last_auto_backup'",
+        params![util::now_local()],
+    )?;
     drop(conn);
-    state.audit("backup.created", "backup", Some(id), &format!("Backup {filename} created ({} attachment(s))", files.len()), None, None);
-    state.notify("success", "backup", "Backup completed", &format!("{filename} ({} KB).", size / 1024), Some("backup"), Some(id), Some("backup"));
+    state.audit(
+        "backup.created",
+        "backup",
+        Some(id),
+        &format!("Backup {filename} created ({} attachment(s))", files.len()),
+        None,
+        None,
+    );
+    state.notify(
+        "success",
+        "backup",
+        "Backup completed",
+        &format!("{filename} ({} KB).", size / 1024),
+        Some("backup"),
+        Some(id),
+        Some("backup"),
+    );
     let _ = s;
-    Ok(json!({ "id": id, "filename": filename, "base64": base64::engine::general_purpose::STANDARD.encode(&blob), "sizeBytes": size, "missing": missing }))
+    Ok(
+        json!({ "id": id, "filename": filename, "base64": base64::engine::general_purpose::STANDARD.encode(&blob), "sizeBytes": size, "missing": missing }),
+    )
 }
 
 #[tauri::command]
 pub fn backup_run(state: State<'_, AppState>, payload: Value) -> Result<Value, String> {
     (|| -> CmdResult<Value> {
         state.gate("backup_run")?;
-        let kind = payload.get("kind").and_then(serde_json::Value::as_str).unwrap_or("manual");
-        let location = payload.get("location").and_then(serde_json::Value::as_str).unwrap_or("");
+        let kind = payload
+            .get("kind")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("manual");
+        let location = payload
+            .get("location")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("");
         run_backup(&state, kind, location)
     })()
     .map_err(err)
@@ -742,7 +985,12 @@ pub fn backup_list(state: State<'_, AppState>) -> Result<Value, String> {
         state.gate("backup_list")?;
         state.need("backup.run")?;
         let conn = state.conn.lock().unwrap();
-        util::query_all(&conn, "SELECT * FROM backup_records ORDER BY id DESC LIMIT 200", params!()).map(|v| json!(v))
+        util::query_all(
+            &conn,
+            "SELECT * FROM backup_records ORDER BY id DESC LIMIT 200",
+            params!(),
+        )
+        .map(|v| json!(v))
     })()
     .map_err(err)
 }
@@ -951,47 +1199,132 @@ fn to_csv(columns: &[String], rows: &[Value]) -> String {
             s
         }
     };
-    let keys: Vec<String> = if rows.is_empty() { columns.to_vec() } else { rows[0].as_object().map(|o| o.keys().cloned().collect()).unwrap_or_default() };
-    let head: Vec<String> = if columns.is_empty() { keys.clone() } else { columns.to_vec() };
-    let mut lines = vec![head.iter().map(|h| esc(&json!(h))).collect::<Vec<_>>().join(",")];
+    let keys: Vec<String> = if rows.is_empty() {
+        columns.to_vec()
+    } else {
+        rows[0]
+            .as_object()
+            .map(|o| o.keys().cloned().collect())
+            .unwrap_or_default()
+    };
+    let head: Vec<String> = if columns.is_empty() {
+        keys.clone()
+    } else {
+        columns.to_vec()
+    };
+    let mut lines = vec![head
+        .iter()
+        .map(|h| esc(&json!(h)))
+        .collect::<Vec<_>>()
+        .join(",")];
     for r in rows {
-        lines.push(keys.iter().map(|k| esc(&r[k])).collect::<Vec<_>>().join(","));
+        lines.push(
+            keys.iter()
+                .map(|k| esc(&r[k]))
+                .collect::<Vec<_>>()
+                .join(","),
+        );
     }
     format!("\u{FEFF}{}", lines.join("\n"))
 }
 
-pub fn run_report_query(state: &AppState, rtype: &str, from: &str, to: &str) -> CmdResult<(Vec<String>, Vec<Value>)> {
+pub fn run_report_query(
+    state: &AppState,
+    rtype: &str,
+    from: &str,
+    to: &str,
+) -> CmdResult<(Vec<String>, Vec<Value>)> {
     let conn = state.conn.lock().unwrap();
     match rtype {
         "expenses" => {
             state.need("reports.financial")?;
             let rows = util::query_all(&conn, "SELECT e.expense_date, COALESCE(c.name,'—') AS category, e.amount_paisa, e.method, e.note FROM expenses e LEFT JOIN accounting_categories c ON c.id = e.category_id WHERE e.expense_date BETWEEN ?1 AND ?2 ORDER BY e.expense_date DESC", &[&from, &to])?;
-            Ok((vec!["Date".into(), "Category".into(), "Amount".into(), "Method".into(), "Note".into()], rows))
+            Ok((
+                vec![
+                    "Date".into(),
+                    "Category".into(),
+                    "Amount".into(),
+                    "Method".into(),
+                    "Note".into(),
+                ],
+                rows,
+            ))
         }
         "invoices" => {
             state.need("reports.financial")?;
             let rows = util::query_all(&conn, "SELECT i.invoice_no, i.invoice_date, p.code, p.name, i.total_paisa, i.paid_paisa, (i.total_paisa - i.paid_paisa) AS due, i.status FROM invoices i JOIN patients p ON p.id = i.patient_id WHERE i.invoice_date BETWEEN ?1 AND ?2 ORDER BY i.invoice_date DESC LIMIT 2000", &[&from, &to])?;
-            Ok((vec!["Invoice".into(), "Date".into(), "Code".into(), "Patient".into(), "Total".into(), "Paid".into(), "Due".into(), "Status".into()], rows))
+            Ok((
+                vec![
+                    "Invoice".into(),
+                    "Date".into(),
+                    "Code".into(),
+                    "Patient".into(),
+                    "Total".into(),
+                    "Paid".into(),
+                    "Due".into(),
+                    "Status".into(),
+                ],
+                rows,
+            ))
         }
         "payments" => {
             state.need("reports.financial")?;
             let rows = util::query_all(&conn, "SELECT py.receipt_no, py.payment_date, p.code, p.name, py.amount_paisa, py.method FROM payments py JOIN patients p ON p.id = py.patient_id WHERE py.payment_date BETWEEN ?1 AND ?2 AND py.reversed = 0 ORDER BY py.payment_date DESC LIMIT 2000", &[&from, &to])?;
-            Ok((vec!["Receipt".into(), "Date".into(), "Code".into(), "Patient".into(), "Amount".into(), "Method".into()], rows))
+            Ok((
+                vec![
+                    "Receipt".into(),
+                    "Date".into(),
+                    "Code".into(),
+                    "Patient".into(),
+                    "Amount".into(),
+                    "Method".into(),
+                ],
+                rows,
+            ))
         }
         "inventory" => {
             state.need("inventory.view")?;
             let rows = util::query_all(&conn, "SELECT i.sku, i.name, i.category, COALESCE((SELECT SUM(qty_remaining) FROM inventory_batches b WHERE b.item_id = i.id),0) AS stock, i.reorder_level, i.unit FROM inventory_items i ORDER BY i.name", params!())?;
-            Ok((vec!["SKU".into(), "Item".into(), "Category".into(), "Stock".into(), "Reorder".into(), "Unit".into()], rows))
+            Ok((
+                vec![
+                    "SKU".into(),
+                    "Item".into(),
+                    "Category".into(),
+                    "Stock".into(),
+                    "Reorder".into(),
+                    "Unit".into(),
+                ],
+                rows,
+            ))
         }
         "appointments" => {
             state.need("appointments.view")?;
             let rows = util::query_all(&conn, "SELECT a.appt_date, a.appt_time, p.code, p.name, COALESCE(dt.name,'') AS dentist, a.status FROM appointments a JOIN patients p ON p.id = a.patient_id LEFT JOIN dentists dt ON dt.id = a.dentist_id WHERE a.appt_date BETWEEN ?1 AND ?2 ORDER BY a.appt_date, a.appt_time LIMIT 2000", &[&from, &to])?;
-            Ok((vec!["Date".into(), "Time".into(), "Code".into(), "Patient".into(), "Dentist".into(), "Status".into()], rows))
+            Ok((
+                vec![
+                    "Date".into(),
+                    "Time".into(),
+                    "Code".into(),
+                    "Patient".into(),
+                    "Dentist".into(),
+                    "Status".into(),
+                ],
+                rows,
+            ))
         }
         "audit" => {
             state.need("audit.view")?;
             let rows = util::query_all(&conn, "SELECT timestamp, username, action, entity_type, summary FROM audit_logs WHERE timestamp BETWEEN ?1 AND ?2 ORDER BY id DESC LIMIT 2000", &[&format!("{from}T00:00:00"), &format!("{to}T23:59:59")])?;
-            Ok((vec!["Time".into(), "User".into(), "Action".into(), "Entity".into(), "Summary".into()], rows))
+            Ok((
+                vec![
+                    "Time".into(),
+                    "User".into(),
+                    "Action".into(),
+                    "Entity".into(),
+                    "Summary".into(),
+                ],
+                rows,
+            ))
         }
         _ => Err(CmdError::new("VALIDATION", "Unknown report type.")),
     }
@@ -1046,13 +1379,21 @@ pub fn data_reset(state: State<'_, AppState>, payload: Value) -> Result<Value, S
     (|| -> CmdResult<Value> {
         state.gate("data_reset")?;
         state.need("data.danger")?;
-        if payload.get("typed").and_then(serde_json::Value::as_str).unwrap_or("") != "DELETE ALL DATA" {
+        if payload
+            .get("typed")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("")
+            != "DELETE ALL DATA"
+        {
             return Err(CmdError::new("CONFIRM", "Type DELETE ALL DATA to confirm."));
         }
         run_backup(&state, "pre-reset", "")?;
         {
             let mut guard = state.conn.lock().unwrap();
-            let _ = std::mem::replace(&mut *guard, db::open_connection(&state.paths.db_path.with_extension("tmp-swap"))?);
+            let _ = std::mem::replace(
+                &mut *guard,
+                db::open_connection(&state.paths.db_path.with_extension("tmp-swap"))?,
+            );
         }
         let _ = std::fs::remove_file(&state.paths.db_path);
         let _ = std::fs::remove_file(format!("{}-wal", state.paths.db_path.to_string_lossy()));
@@ -1062,7 +1403,11 @@ pub fn data_reset(state: State<'_, AppState>, payload: Value) -> Result<Value, S
         db::ensure_schema(&fresh)?;
         // Preserve activation across factory reset (one-time code stays valid).
         util::meta_set(&fresh, "activated", "1")?;
-        util::meta_set(&fresh, "activation_receipt", &crate::activation::activation_receipt(&state.install_id))?;
+        util::meta_set(
+            &fresh,
+            "activation_receipt",
+            &crate::activation::activation_receipt(&state.install_id),
+        )?;
         {
             let mut guard = state.conn.lock().unwrap();
             let _ = std::mem::replace(&mut *guard, fresh);
@@ -1081,10 +1426,19 @@ pub fn logo_save(state: State<'_, AppState>, payload: Value) -> Result<Value, St
     (|| -> CmdResult<Value> {
         state.gate("logo_save")?;
         state.need("settings.manage")?;
-        let b64 = payload.get("base64").and_then(serde_json::Value::as_str).unwrap_or("");
-        let mime = payload.get("mime").and_then(serde_json::Value::as_str).unwrap_or("");
+        let b64 = payload
+            .get("base64")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("");
+        let mime = payload
+            .get("mime")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("");
         if !["image/png", "image/jpeg", "image/webp", "image/svg+xml"].contains(&mime) {
-            return Err(CmdError::new("VALIDATION", "Logo must be PNG, JPEG, WebP, or SVG."));
+            return Err(CmdError::new(
+                "VALIDATION",
+                "Logo must be PNG, JPEG, WebP, or SVG.",
+            ));
         }
         use base64::Engine;
         let bytes = base64::engine::general_purpose::STANDARD.decode(b64.as_bytes())?;
@@ -1094,7 +1448,10 @@ pub fn logo_save(state: State<'_, AppState>, payload: Value) -> Result<Value, St
         std::fs::write(state.paths.data_dir.join("logo"), &bytes)?;
         let logo_path = format!("file:logo:{mime}");
         let conn = state.conn.lock().unwrap();
-        conn.execute("UPDATE clinic SET logo_path = ?1 WHERE id = 1", [&logo_path])?;
+        conn.execute(
+            "UPDATE clinic SET logo_path = ?1 WHERE id = 1",
+            [&logo_path],
+        )?;
         Ok(json!({ "ok": true, "logoPath": logo_path }))
     })()
     .map_err(err)
